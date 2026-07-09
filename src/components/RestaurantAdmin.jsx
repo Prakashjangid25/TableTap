@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  FiHome, 
-  FiFolder, 
-  FiGrid, 
-  FiFileText, 
-  FiTag, 
-  FiSettings, 
-  FiPower, 
-  FiPlus, 
-  FiTrash2, 
-  FiShoppingBag, 
+import {
+  FiHome,
+  FiFolder,
+  FiGrid,
+  FiFileText,
+  FiTag,
+  FiSettings,
+  FiPower,
+  FiPlus,
+  FiTrash2,
+  FiShoppingBag,
   FiCoffee,
   FiLock,
   FiMail,
@@ -18,24 +18,27 @@ import {
   FiPrinter,
   FiCheck,
   FiSun,
-  FiMoon
+  FiMoon,
+  FiX
 } from 'react-icons/fi';
-import { 
-  getRestaurants, 
-  getCategories, 
-  createCategory, 
-  deleteCategory, 
-  getProducts, 
-  createProduct, 
-  updateProduct, 
-  deleteProduct, 
-  getTables, 
-  createTable, 
-  deleteTable, 
-  getCoupons, 
-  createCoupon, 
-  deleteCoupon, 
-  getOrders, 
+import { db } from '../firebase';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import {
+  getRestaurants,
+  getCategories,
+  createCategory,
+  deleteCategory,
+  getProducts,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  getTables,
+  createTable,
+  deleteTable,
+  getCoupons,
+  createCoupon,
+  deleteCoupon,
+  getOrders,
   updateOrderStatus,
   updateRestaurant
 } from '../dbService';
@@ -78,7 +81,7 @@ export default function RestaurantAdmin() {
   // Modals / Creators Form State
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCatName, setNewCatName] = useState('');
-  
+
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [newProd, setNewProd] = useState({
     name: '', description: '', price: '', categoryId: '',
@@ -106,7 +109,54 @@ export default function RestaurantAdmin() {
     }
   }, [user, userRole, userRestaurantId]);
 
-  // Load restaurant data when selectedRestId changes
+  // Real-time order notification system states
+  const [notificationQueue, setNotificationQueue] = useState([]);
+  const [currentNotification, setCurrentNotification] = useState(null);
+  const [isFadingOut, setIsFadingOut] = useState(false);
+
+  // Sound play helper using high-fidelity Web Audio API synthesizer
+  const playNotificationSound = () => {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+
+      // Dual-note chime (E5 -> A5)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(659.25, ctx.currentTime); // E5
+      gain1.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start();
+      osc1.stop(ctx.currentTime + 0.3);
+
+      setTimeout(() => {
+        try {
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(880, ctx.currentTime); // A5
+          gain2.gain.setValueAtTime(0.15, ctx.currentTime);
+          gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+
+          osc2.connect(gain2);
+          gain2.connect(ctx.destination);
+          osc2.start();
+          osc2.stop(ctx.currentTime + 0.4);
+        } catch (e) {
+          console.warn("Second audio note failed", e);
+        }
+      }, 120);
+    } catch (e) {
+      console.warn("Web Audio chime failed", e);
+    }
+  };
+
+  // Load restaurant metadata when selectedRestId changes
   useEffect(() => {
     async function loadRestaurant() {
       if (!user || !selectedRestId) return;
@@ -115,17 +165,15 @@ export default function RestaurantAdmin() {
       const r = list.find(item => item.id === selectedRestId);
       setCurrentRest(r || null);
       if (r) {
-        const [cats, prods, tbls, ords, cpns] = await Promise.all([
+        const [cats, prods, tbls, cpns] = await Promise.all([
           getCategories(r.id),
           getProducts(r.id),
           getTables(r.id),
-          getOrders(r.id),
           getCoupons(r.id)
         ]);
         setCategories(cats);
         setProducts(prods);
         setTables(tbls);
-        setOrders(ords);
         setCoupons(cpns);
       }
       setLoading(false);
@@ -133,20 +181,84 @@ export default function RestaurantAdmin() {
     loadRestaurant();
   }, [selectedRestId, user]);
 
-  // Refresh helper
+  // Real-time listener for orders using Firebase Firestore
+  useEffect(() => {
+    if (!user || !selectedRestId) return;
+
+    let isInitialLoad = true;
+
+    const ordersColRef = collection(db, "restaurants", selectedRestId, "orders");
+    const q = query(ordersColRef, orderBy("createdAt", "desc"));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map(doc => doc.data());
+      setOrders(list);
+
+      // Listen for newly added orders
+      snapshot.docChanges().forEach(change => {
+        if (change.type === 'added') {
+          const newOrder = change.doc.data();
+          if (!isInitialLoad) {
+            // This is a genuinely new order! Play sound and queue the notification toast
+            playNotificationSound();
+            setNotificationQueue(prev => [...prev, {
+              id: newOrder.id,
+              tableName: newOrder.tableName || 'Table',
+              orderId: newOrder.id
+            }]);
+          }
+        }
+      });
+
+      isInitialLoad = false;
+    }, (error) => {
+      console.error("Firestore real-time orders error", error);
+      // Fallback to static fetch in case of permissions or connectivity issue
+      getOrders(selectedRestId).then(setOrders);
+    });
+
+    return () => unsubscribe();
+  }, [selectedRestId, user]);
+
+  // FIFO Queue processing effect for sequential, non-overlapping order notification toasts
+  useEffect(() => {
+    if (!currentNotification && notificationQueue.length > 0) {
+      const nextNotification = notificationQueue[0];
+      setCurrentNotification(nextNotification);
+      setNotificationQueue(prev => prev.slice(1));
+    }
+  }, [notificationQueue, currentNotification]);
+
+  // Auto-dismiss the active notification after 4.5 seconds
+  useEffect(() => {
+    if (currentNotification) {
+      const timer = setTimeout(() => {
+        handleCloseNotification();
+      }, 4500);
+      return () => clearTimeout(timer);
+    }
+  }, [currentNotification]);
+
+  const handleCloseNotification = () => {
+    setIsFadingOut(true);
+    setTimeout(() => {
+      setCurrentNotification(null);
+      setIsFadingOut(false);
+    }, 250); // duration of the fade-out CSS animation
+  };
+
+  // Refresh helper for other metadata (orders are updated in real-time)
   const refreshCollections = async () => {
     if (!currentRest) return;
-    const [cats, prods, tbls, ords, cpns] = await Promise.all([
+    const [cats, prods, tbls, cpns] = await Promise.all([
       getCategories(currentRest.id),
       getProducts(currentRest.id),
       getTables(currentRest.id),
-      getOrders(currentRest.id),
       getCoupons(currentRest.id)
     ]);
     setCategories(cats);
     setProducts(prods);
     setTables(tbls);
-    setOrders(ords);
     setCoupons(cpns);
   };
 
@@ -306,7 +418,7 @@ export default function RestaurantAdmin() {
               <label className={labelCls}>Email Address</label>
               <div className="relative">
                 <FiMail className={`absolute left-3.5 top-3.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
-                <input 
+                <input
                   type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                   placeholder="manager@restaurant.com"
                   className={`w-full border rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-amber-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
@@ -318,7 +430,7 @@ export default function RestaurantAdmin() {
               <label className={labelCls}>Password</label>
               <div className="relative">
                 <FiLock className={`absolute left-3.5 top-3.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
-                <input 
+                <input
                   type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className={`w-full border rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-amber-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
@@ -327,7 +439,7 @@ export default function RestaurantAdmin() {
               </div>
               {authError && <p className="text-xs text-rose-500 mt-2 flex items-center gap-1"><FiAlertTriangle /> {authError}</p>}
             </div>
-            <button 
+            <button
               type="submit" disabled={authLoading}
               className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-semibold py-3 rounded-xl text-sm shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
             >
@@ -392,7 +504,7 @@ export default function RestaurantAdmin() {
   // ═══════════════════════════════════════════════
   return (
     <div className={`min-h-screen font-sans flex flex-col md:flex-row ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
-      
+
       {/* Sidebar */}
       <aside className={`w-full md:w-64 p-6 flex flex-col justify-between border-r shrink-0 ${isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-slate-900 border-slate-800 text-slate-100'}`}>
         <div>
@@ -421,9 +533,8 @@ export default function RestaurantAdmin() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm transition-all text-left font-medium cursor-pointer ${
-                  activeTab === tab.id ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-                }`}
+                className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm transition-all text-left font-medium cursor-pointer ${activeTab === tab.id ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-lg shrink-0">{tab.icon}</span>
@@ -453,7 +564,7 @@ export default function RestaurantAdmin() {
 
       {/* Main Panel Content */}
       <main className="flex-1 p-6 md:p-10 overflow-y-auto w-full max-w-7xl mx-auto">
-        
+
         {/* ── TAB 1: DASHBOARD ──────────────────── */}
         {activeTab === 'dashboard' && (
           <div className="animate-fade-in space-y-8">
@@ -489,14 +600,14 @@ export default function RestaurantAdmin() {
                     const scanLink = `${window.location.origin}/customer?r=${currentRest.id}&t=${tbl.id}`;
                     const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(scanLink)}`;
                     return (
-                      <div key={tbl.id} className={`flex items-center justify-between p-3 rounded-xl border text-xs ${isDark ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                        <div>
-                          <p className={`font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{tbl.tableName}</p>
-                          <p className={`truncate max-w-sm ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{scanLink}</p>
+                      <div key={tbl.id} className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl border gap-4 text-xs ${isDark ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                        <div className="min-w-0 flex-1">
+                          <p className={`font-bold text-sm ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{tbl.tableName}</p>
+                          <p className={`text-xs break-all sm:truncate max-w-full select-all mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} title={scanLink}>{scanLink}</p>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <img src={qrImg} alt="QR" className="w-8 h-8 rounded border bg-white" />
-                          <a href={scanLink} target="_blank" rel="noreferrer" className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 rounded font-semibold text-[11px] uppercase">Test Scan</a>
+                        <div className="flex items-center gap-3 shrink-0 justify-end sm:justify-start">
+                          <img src={qrImg} alt="QR" className="w-8 h-8 rounded border bg-white p-0.5 shrink-0" />
+                          <a href={scanLink} target="_blank" rel="noreferrer" className="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 rounded font-semibold text-[11px] uppercase tracking-wider text-center shrink-0">Test Scan</a>
                         </div>
                       </div>
                     );
@@ -707,10 +818,10 @@ export default function RestaurantAdmin() {
                       <img src={qrImg} alt="QR Code" className="w-32 h-32 bg-white p-1 rounded-lg border shadow-sm" />
                       <span className={`text-[10px] font-mono mt-2 ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>Scan TableTap QR</span>
                     </div>
-                    <div className="flex-1 space-y-3 w-full text-center md:text-left">
+                    <div className="flex-1 min-w-0 space-y-3 w-full text-center md:text-left">
                       <div>
                         <h4 className={`text-xl font-bold font-display ${isDark ? 'text-white' : 'text-slate-900'}`}>{tbl.tableName}</h4>
-                        <p className={`text-xs truncate max-w-xs mb-1.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{scanLink}</p>
+                        <p className={`text-xs break-all whitespace-normal mb-1.5 select-all ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{scanLink}</p>
                         <span className={`font-mono text-[10px] px-2 py-0.5 rounded ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-600'}`}>ID: {tbl.id}</span>
                       </div>
                       <div className="flex flex-wrap gap-2 justify-center md:justify-start pt-2">
@@ -766,15 +877,14 @@ export default function RestaurantAdmin() {
                             ₹{(order.grandTotal || order.totalAmount || 0).toFixed(2)}
                           </td>
                           <td className="px-6 py-4">
-                            <span className={`inline-flex items-center gap-0.5 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                              order.status === 'pending' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
-                              order.status === 'accepted' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                              order.status === 'preparing' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' :
-                              order.status === 'ready' ? 'bg-pink-100 text-pink-700 border border-pink-200' :
-                              order.status === 'served' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
-                              order.status === 'completed' ? 'bg-teal-100 text-teal-700 border border-teal-200' :
-                              'bg-slate-100 text-slate-500 border'
-                            }`}>
+                            <span className={`inline-flex items-center gap-0.5 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${order.status === 'pending' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                                order.status === 'accepted' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                                  order.status === 'preparing' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' :
+                                    order.status === 'ready' ? 'bg-pink-100 text-pink-700 border border-pink-200' :
+                                      order.status === 'served' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
+                                        order.status === 'completed' ? 'bg-teal-100 text-teal-700 border border-teal-200' :
+                                          'bg-slate-100 text-slate-500 border'
+                              }`}>
                               {order.status}
                             </span>
                           </td>
@@ -924,6 +1034,27 @@ export default function RestaurantAdmin() {
           </div>
         )}
       </main>
+
+      {/* Real-time Order Notification Toast */}
+      {currentNotification && (
+        <div className={`fixed top-4 right-4 z-50 w-full max-w-sm p-4 bg-[#16a34a] text-white rounded-2xl shadow-xl border border-emerald-500/30 flex items-start gap-3 select-none ${isFadingOut ? 'animate-fade-out-right' : 'animate-slide-in-right'
+          }`}>
+          <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center font-bold text-lg text-white shrink-0">
+            🔔
+          </div>
+          <div className="flex-1">
+            <h4 className="font-extrabold text-sm tracking-tight">New Order Received</h4>
+            <p className="text-xs font-semibold opacity-90 mt-0.5">Table No: {currentNotification.tableName}</p>
+            <p className="text-[10px] font-mono opacity-80 mt-1">Order #{currentNotification.orderId}</p>
+          </div>
+          <button
+            onClick={handleCloseNotification}
+            className="p-1 rounded-lg hover:bg-white/10 active:bg-white/20 text-white transition-colors cursor-pointer"
+          >
+            <FiX className="text-base" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

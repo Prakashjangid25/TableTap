@@ -11,46 +11,46 @@
    LIGHT THEME VARIABLES
    ========================================= */
 [data-theme="light"] {
-  --color-bg:          #f8fafc;
-  --color-surface:     #ffffff;
-  --color-surface-2:   #f1f5f9;
-  --color-border:      #e2e8f0;
-  --color-border-2:    #cbd5e1;
-  --color-text:        #0f172a;
-  --color-text-2:      #334155;
-  --color-text-muted:  #64748b;
-  --color-text-faint:  #94a3b8;
-  --color-sidebar:     #1e293b;
-  --color-sidebar-text:#e2e8f0;
-  --color-sidebar-muted:#94a3b8;
-  --color-sidebar-border:#334155;
-  --color-input-bg:    #f8fafc;
-  --color-input-border:#e2e8f0;
-  --color-card-hover:  #f8fafc;
-  --shadow-card:       0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.05);
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-border-2: #cbd5e1;
+  --color-text: #0f172a;
+  --color-text-2: #334155;
+  --color-text-muted: #64748b;
+  --color-text-faint: #94a3b8;
+  --color-sidebar: #1e293b;
+  --color-sidebar-text: #e2e8f0;
+  --color-sidebar-muted: #94a3b8;
+  --color-sidebar-border: #334155;
+  --color-input-bg: #f8fafc;
+  --color-input-border: #e2e8f0;
+  --color-card-hover: #f8fafc;
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.05);
 }
 
 /* =========================================
    DARK THEME VARIABLES
    ========================================= */
 [data-theme="dark"] {
-  --color-bg:          #020617;
-  --color-surface:     #0f172a;
-  --color-surface-2:   #1e293b;
-  --color-border:      #1e293b;
-  --color-border-2:    #334155;
-  --color-text:        #f1f5f9;
-  --color-text-2:      #cbd5e1;
-  --color-text-muted:  #94a3b8;
-  --color-text-faint:  #64748b;
-  --color-sidebar:     #0f172a;
-  --color-sidebar-text:#e2e8f0;
-  --color-sidebar-muted:#64748b;
-  --color-sidebar-border:#1e293b;
-  --color-input-bg:    #020617;
-  --color-input-border:#1e293b;
-  --color-card-hover:  #1e293b;
-  --shadow-card:       0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --color-bg: #020617;
+  --color-surface: #0f172a;
+  --color-surface-2: #1e293b;
+  --color-border: #1e293b;
+  --color-border-2: #334155;
+  --color-text: #f1f5f9;
+  --color-text-2: #cbd5e1;
+  --color-text-muted: #94a3b8;
+  --color-text-faint: #64748b;
+  --color-sidebar: #0f172a;
+  --color-sidebar-text: #e2e8f0;
+  --color-sidebar-muted: #64748b;
+  --color-sidebar-border: #1e293b;
+  --color-input-bg: #020617;
+  --color-input-border: #1e293b;
+  --color-card-hover: #1e293b;
+  --shadow-card: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
 }
 
 /* Apply theme to body */
@@ -62,38 +62,135 @@ body {
 }
 
 /* Theme-aware utility classes */
-.themed-bg       { background-color: var(--color-bg); }
-.themed-surface  { background-color: var(--color-surface); }
-.themed-surface2 { background-color: var(--color-surface-2); }
-.themed-border   { border-color: var(--color-border); }
-.themed-border2  { border-color: var(--color-border-2); }
-.themed-text     { color: var(--color-text); }
-.themed-text2    { color: var(--color-text-2); }
-.themed-muted    { color: var(--color-text-muted); }
-.themed-faint    { color: var(--color-text-faint); }
-.themed-input    { background-color: var(--color-input-bg); border-color: var(--color-input-border); color: var(--color-text); }
-.themed-card     { background-color: var(--color-surface); border-color: var(--color-border); box-shadow: var(--shadow-card); }
-.themed-sidebar  { background-color: var(--color-sidebar); }
+.themed-bg {
+  background-color: var(--color-bg);
+}
+
+.themed-surface {
+  background-color: var(--color-surface);
+}
+
+.themed-surface2 {
+  background-color: var(--color-surface-2);
+}
+
+.themed-border {
+  border-color: var(--color-border);
+}
+
+.themed-border2 {
+  border-color: var(--color-border-2);
+}
+
+.themed-text {
+  color: var(--color-text);
+}
+
+.themed-text2 {
+  color: var(--color-text-2);
+}
+
+.themed-muted {
+  color: var(--color-text-muted);
+}
+
+.themed-faint {
+  color: var(--color-text-faint);
+}
+
+.themed-input {
+  background-color: var(--color-input-bg);
+  border-color: var(--color-input-border);
+  color: var(--color-text);
+}
+
+.themed-card {
+  background-color: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-card);
+}
+
+.themed-sidebar {
+  background-color: var(--color-sidebar);
+}
 
 /* Custom fade animations */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .animate-fade-in {
   animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes slideInRight {
+  from {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOutRight {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  to {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fade-out-right {
+  animation: fadeOutRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 /* Scrollbar customization */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-border-2); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--color-text-faint); }
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-faint);
+}
 
 /* No scrollbar utility */
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
 
 /* Theme toggle button */
 .theme-toggle {
@@ -109,6 +206,7 @@ body {
   cursor: pointer;
   transition: all 0.15s ease;
 }
+
 .theme-toggle:hover {
   border-color: var(--color-border-2);
   color: var(--color-text);
@@ -116,9 +214,12 @@ body {
 }
 
 /* Transitions for smooth theme switch */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   transition-property: background-color, border-color, color, box-shadow;
   transition-duration: 0.15s;
   transition-timing-function: ease;
 }
+
 /* But don't transition transforms/position (breaks animations) */
