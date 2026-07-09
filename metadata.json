@@ -1,0 +1,6 @@
+{
+  "name": "TableTap",
+  "description": "TableTap is a premium, production-ready SaaS platform for Restaurant QR Menu & Ordering, featuring dashboards for platform Super Admins, Restaurant Admins, Kitchen panels, and a seamless checkout experience for customers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
