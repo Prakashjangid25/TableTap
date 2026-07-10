@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  FiHome, 
-  FiUser, 
+import {
+  FiHome,
+  FiUser,
   FiLock,
-  FiPower, 
-  FiPlus, 
-  FiTrash2, 
-  FiRefreshCw, 
-  FiActivity, 
+  FiPower,
+  FiPlus,
+  FiTrash2,
+  FiRefreshCw,
+  FiActivity,
   FiServer,
-  FiGrid, 
-  FiSettings, 
-  FiCheckCircle, 
+  FiGrid,
+  FiSettings,
+  FiCheckCircle,
   FiXCircle,
   FiAlertTriangle,
   FiArrowLeft,
@@ -25,10 +25,10 @@ import {
   FiPhone,
   FiLayers
 } from 'react-icons/fi';
-import { 
-  getRestaurants, 
-  createRestaurant, 
-  deleteRestaurant, 
+import {
+  getRestaurants,
+  createRestaurant,
+  deleteRestaurant,
   updateRestaurant,
   getSubscriptionPlans,
   createSubscriptionPlan,
@@ -62,6 +62,7 @@ export default function SuperAdmin() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [securityKey, setSecurityKey] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [authError, setAuthError] = useState('');
 
@@ -134,15 +135,53 @@ export default function SuperAdmin() {
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
-    if (!email || !password) { setAuthError('Please fill in all fields.'); return; }
-    try {
-      if (isSignUp) {
-        await signUpWithEmail(email, password, 'super_admin');
-      } else {
-        await signInWithEmail(email, password);
+
+    if (isSignUp) {
+      if (!email || !password || !securityKey) {
+        setAuthError('Please fill in all fields.');
+        return;
       }
-    } catch (err) {
-      setAuthError(err.message || 'Authentication failed. Please check your credentials.');
+      try {
+        // Step 1: Read system/settings
+        const systemSettingsRef = doc(db, 'system', 'settings');
+        const systemSettingsSnap = await getDoc(systemSettingsRef);
+
+        if (!systemSettingsSnap.exists()) {
+          setAuthError('Unable to verify Security Key. Please try again.');
+          return;
+        }
+
+        // Step 2: Read superAdminSecurityKey
+        const systemData = systemSettingsSnap.data();
+        const correctKey = systemData?.superAdminSecurityKey;
+
+        if (!correctKey) {
+          setAuthError('Unable to verify Security Key. Please try again.');
+          return;
+        }
+
+        // Step 3: Compare with the Security Key entered by the user
+        if (securityKey !== correctKey) {
+          setAuthError('Invalid Security Key. Please contact the system owner.');
+          return;
+        }
+
+        // Key is valid! Continue the existing registration flow
+        await signUpWithEmail(email, password, 'super_admin');
+      } catch (err) {
+        console.error('Firestore security key verification error:', err);
+        setAuthError('Unable to verify Security Key. Please try again.');
+      }
+    } else {
+      if (!email || !password) {
+        setAuthError('Please fill in all fields.');
+        return;
+      }
+      try {
+        await signInWithEmail(email, password);
+      } catch (err) {
+        setAuthError(err.message || 'Authentication failed. Please check your credentials.');
+      }
     }
   };
 
@@ -365,20 +404,20 @@ export default function SuperAdmin() {
               Super Admin Gate
             </span>
           </div>
-          
+
           <h2 className="text-2xl font-bold font-display tracking-tight mb-2">
             {isSignUp ? 'Create Super Admin' : 'TableTap Platform Control'}
           </h2>
           <p className={`text-sm font-light mb-6 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
             {isSignUp ? 'Register a master user for platform orchestration.' : 'Sign in to access the SaaS orchestration dashboard.'}
           </p>
-          
+
           <form onSubmit={handleAuthSubmit} className="space-y-4">
             <div>
               <label className={labelCls}>Email Address</label>
               <div className="relative">
                 <FiMail className={`absolute left-3 top-3.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
-                <input 
+                <input
                   type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@tabletap.in"
                   className={`w-full ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'} border rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-emerald-500 transition-colors`}
@@ -390,16 +429,30 @@ export default function SuperAdmin() {
               <label className={labelCls}>Password</label>
               <div className="relative">
                 <FiLock className={`absolute left-3 top-3.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
-                <input 
+                <input
                   type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className={`w-full ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'} border rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-emerald-500 transition-colors`}
                   required
                 />
               </div>
-              {authError && <p className="text-xs text-rose-400 mt-2 flex items-center gap-1"><FiAlertTriangle /> {authError}</p>}
             </div>
-            <button 
+            {isSignUp && (
+              <div>
+                <label className={labelCls}>Security Key</label>
+                <div className="relative">
+                  <FiLock className={`absolute left-3 top-3.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
+                  <input
+                    type="password" value={securityKey} onChange={(e) => setSecurityKey(e.target.value)}
+                    placeholder="Enter Security Key"
+                    className={`w-full ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'} border rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-emerald-500 transition-colors`}
+                    required
+                  />
+                </div>
+              </div>
+            )}
+            {authError && <p className="text-xs text-rose-400 mt-2 flex items-center gap-1"><FiAlertTriangle /> {authError}</p>}
+            <button
               type="submit" disabled={authLoading}
               className="w-full bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 py-3 rounded-xl font-semibold text-sm shadow-lg transition-all cursor-pointer text-slate-950 flex items-center justify-center gap-2 disabled:opacity-50"
             >
@@ -408,7 +461,7 @@ export default function SuperAdmin() {
           </form>
 
           <div className="mt-4 text-center">
-            <button onClick={() => { setIsSignUp(!isSignUp); setAuthError(''); }} className="text-xs text-emerald-400 hover:underline">
+            <button onClick={() => { setIsSignUp(!isSignUp); setAuthError(''); setSecurityKey(''); }} className="text-xs text-emerald-400 hover:underline">
               {isSignUp ? 'Already have an admin account? Sign In' : 'Need to register a master account? Sign Up'}
             </button>
           </div>
@@ -448,7 +501,7 @@ export default function SuperAdmin() {
   // ═══════════════════════════════════════════════
   return (
     <div className={`min-h-screen font-sans flex flex-col md:flex-row ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-800'}`}>
-      
+
       {/* Sidebar */}
       <aside className={`w-full md:w-64 p-6 flex flex-col justify-between shrink-0 border-r ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
         <div>
@@ -469,11 +522,10 @@ export default function SuperAdmin() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all text-left cursor-pointer ${
-                  activeTab === tab.id
+                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all text-left cursor-pointer ${activeTab === tab.id
                     ? 'bg-emerald-500/10 text-emerald-400'
                     : isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800/50' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
-                }`}
+                  }`}
               >
                 {tab.icon}
                 {tab.label}
