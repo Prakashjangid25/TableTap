@@ -23,6 +23,7 @@ import {
 } from 'react-icons/fi';
 import { db } from '../firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import QRPrintSystem from './QRPrintSystem.jsx';
 import {
   getRestaurants,
   getCategories,
@@ -90,6 +91,10 @@ export default function RestaurantAdmin() {
 
   const [showAddTable, setShowAddTable] = useState(false);
   const [newTableName, setNewTableName] = useState('');
+
+  // Print QR modal state
+  const [printTable, setPrintTable] = useState(null);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
   const [showAddCoupon, setShowAddCoupon] = useState(false);
   const [newCoupon, setNewCoupon] = useState({
@@ -826,6 +831,12 @@ export default function RestaurantAdmin() {
                       </div>
                       <div className="flex flex-wrap gap-2 justify-center md:justify-start pt-2">
                         <a href={scanLink} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 hover:bg-amber-600 font-bold text-[11px] uppercase transition-colors">Test Menu Link</a>
+                        <button
+                          onClick={() => { setPrintTable(tbl); setIsPrintModalOpen(true); }}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 font-bold text-[11px] uppercase transition-colors flex items-center gap-1 text-slate-950 cursor-pointer"
+                        >
+                          <FiPrinter className="text-sm shrink-0" /> Print QR
+                        </button>
                         <button onClick={() => window.print()} className={`px-3 py-1.5 rounded-lg font-semibold text-[11px] uppercase transition-colors flex items-center gap-1 ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}><FiPrinter /> Print Sheet</button>
                         <button onClick={() => handleDeleteTable(tbl.id)} className="p-1.5 rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-100 border border-rose-100 transition-colors cursor-pointer ml-auto"><FiTrash2 /></button>
                       </div>
@@ -1055,6 +1066,14 @@ export default function RestaurantAdmin() {
           </button>
         </div>
       )}
+
+      <QRPrintSystem
+        isOpen={isPrintModalOpen}
+        onClose={() => { setIsPrintModalOpen(false); setPrintTable(null); }}
+        table={printTable}
+        restaurant={currentRest}
+        isDark={isDark}
+      />
     </div>
   );
 }
