@@ -21,7 +21,9 @@ import {
   FiMoon,
   FiX,
   FiEdit2,
-  FiMap
+  FiMap,
+  FiCalendar,
+  FiChevronDown
 } from 'react-icons/fi';
 import FloorMapManager from './FloorMapManager.jsx';
 import { db } from '../firebase';
@@ -69,6 +71,22 @@ export default function RestaurantAdmin() {
   const [selectedRestId, setSelectedRestId] = useState(null);
   const [currentRest, setCurrentRest] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [dateFilter, setDateFilter] = useState('today');
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const [ordersDateFilter, setOrdersDateFilter] = useState('today');
+  const [isOrdersFilterDropdownOpen, setIsOrdersFilterDropdownOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState(null);
+
+  // Close custom dropdowns on click outside
+  useEffect(() => {
+    if (!isFilterDropdownOpen && !isOrdersFilterDropdownOpen) return;
+    const handleOutsideClick = () => {
+      setIsFilterDropdownOpen(false);
+      setIsOrdersFilterDropdownOpen(false);
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => document.removeEventListener('click', handleOutsideClick);
+  }, [isFilterDropdownOpen, isOrdersFilterDropdownOpen]);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -542,6 +560,42 @@ export default function RestaurantAdmin() {
     refreshCollections();
   };
 
+  const formatOrderDateTime = (createdAtStr) => {
+    if (!createdAtStr) return { date: '-', time: '-' };
+    const d = new Date(createdAtStr);
+    if (isNaN(d.getTime())) return { date: '-', time: '-' };
+
+    const day = d.getDate();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    const dateFormatted = `${day} ${month} ${year}`;
+
+    let hours = d.getHours();
+    const minutes = d.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const minutesStr = minutes < 10 ? '0' + minutes : minutes;
+    const timeFormatted = `${hours}:${minutesStr} ${ampm}`;
+
+    return { date: dateFormatted, time: timeFormatted };
+  };
+
+  const handleDeleteOrder = async (orderId) => {
+    if (!currentRest) return;
+    try {
+      const orderRef = doc(db, "restaurants", currentRest.id, "orders", orderId);
+      await deleteDoc(orderRef);
+      setOrderToDelete(null);
+      setAdminSuccessToast('Order permanently deleted successfully.');
+      setTimeout(() => setAdminSuccessToast(''), 3000);
+      refreshCollections();
+    } catch (err) {
+      console.error("Error permanently deleting order: ", err);
+    }
+  };
+
   // ── Coupon Operations ─────────────────────────
   const handleAddCoupon = async (e) => {
     e.preventDefault();
@@ -575,10 +629,48 @@ export default function RestaurantAdmin() {
     setTimeout(() => setSettingsStatus(''), 3000);
   };
 
+  // Helper to determine if an order falls into the selected date range
+  const isOrderInDateFilter = (createdAtStr) => {
+    if (!createdAtStr) return false;
+    const now = new Date();
+    const orderDate = new Date(createdAtStr);
+    if (isNaN(orderDate.getTime())) return false;
+
+    if (dateFilter === 'today') {
+      return orderDate.toDateString() === now.toDateString();
+    } else if (dateFilter === 'month') {
+      return orderDate.getMonth() === now.getMonth() &&
+        orderDate.getFullYear() === now.getFullYear();
+    } else if (dateFilter === 'year') {
+      return orderDate.getFullYear() === now.getFullYear();
+    }
+    return true;
+  };
+
+  // Helper to determine if an order falls into the selected date range for the Orders tab
+  const isOrderInOrdersDateFilter = (createdAtStr) => {
+    if (!createdAtStr) return false;
+    const now = new Date();
+    const orderDate = new Date(createdAtStr);
+    if (isNaN(orderDate.getTime())) return false;
+
+    if (ordersDateFilter === 'today') {
+      return orderDate.toDateString() === now.toDateString();
+    } else if (ordersDateFilter === 'month') {
+      return orderDate.getMonth() === now.getMonth() &&
+        orderDate.getFullYear() === now.getFullYear();
+    } else if (ordersDateFilter === 'year') {
+      return orderDate.getFullYear() === now.getFullYear();
+    }
+    return true;
+  };
+
   // Calculations
-  const totalSales = orders.filter(o => o.status === 'completed' || o.status === 'served').reduce((acc, curr) => acc + (curr.grandTotal || 0), 0);
-  const ordersCount = orders.length;
+  const filteredOrdersForMetrics = orders.filter(o => isOrderInDateFilter(o.createdAt));
+  const totalSales = filteredOrdersForMetrics.filter(o => o.status === 'completed' || o.status === 'served').reduce((acc, curr) => acc + (curr.grandTotal || 0), 0);
+  const ordersCount = filteredOrdersForMetrics.length;
   const pendingOrdersCount = orders.filter(o => o.status === 'pending').length;
+  const filteredOrdersForDisplay = orders.filter(o => isOrderInOrdersDateFilter(o.createdAt));
 
   // ── Shared styles ─────────────────────────────
   const surface = isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200';
@@ -770,15 +862,99 @@ export default function RestaurantAdmin() {
         {/* ── TAB 1: DASHBOARD ──────────────────── */}
         {activeTab === 'dashboard' && (
           <div className="animate-fade-in space-y-8">
-            <div>
-              <h1 className={`text-3xl font-bold font-display tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>Storefront Overview</h1>
-              <p className={`text-sm mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Live overview of sales performance, tables, and product analytics.</p>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h1 className={`text-3xl font-bold font-display tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>Storefront Overview</h1>
+                <p className={`text-sm mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Live overview of sales performance, tables, and product analytics.</p>
+              </div>
+
+              {/* Premium Date Filter Dropdown */}
+              <div className="relative shrink-0 select-none">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsFilterDropdownOpen(!isFilterDropdownOpen);
+                  }}
+                  className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold tracking-wide transition-all shadow-sm hover:shadow cursor-pointer ${isDark
+                      ? 'bg-slate-900 border-slate-800 text-slate-200 hover:text-white hover:bg-slate-800/80'
+                      : 'bg-white border-slate-200 text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                >
+                  <FiCalendar className="text-amber-500 text-base" />
+                  <span>
+                    Show: {dateFilter === 'today' ? 'Today' : dateFilter === 'month' ? 'This Month' : 'This Year'}
+                  </span>
+                  <FiChevronDown className={`text-slate-400 transition-transform duration-300 ${isFilterDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isFilterDropdownOpen && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className={`absolute right-0 mt-2 w-48 rounded-2xl border shadow-2xl p-2 z-50 animate-fade-in divide-y ${isDark
+                        ? 'bg-slate-900 border-slate-800 divide-slate-800/50'
+                        : 'bg-white border-slate-200 divide-slate-100'
+                      }`}
+                  >
+                    {[
+                      { value: 'today', label: 'Today' },
+                      { value: 'month', label: 'This Month' },
+                      { value: 'year', label: 'This Year' }
+                    ].map((opt) => {
+                      const isSelected = dateFilter === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          onClick={() => {
+                            setDateFilter(opt.value);
+                            setIsFilterDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${isSelected
+                              ? isDark
+                                ? 'bg-amber-500/10 text-amber-400'
+                                : 'bg-amber-50 text-amber-600'
+                              : isDark
+                                ? 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                            }`}
+                        >
+                          <span>{opt.label}</span>
+                          {isSelected && <FiCheck className="text-sm stroke-[3px]" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
-                { label: 'Gross Sales', value: `₹${totalSales.toFixed(2)}`, sub: '✓ Dynamic checkouts inclusive', icon: '₹', color: 'text-amber-500', bg: 'bg-amber-500/10', subColor: isDark ? 'text-emerald-400' : 'text-emerald-600' },
-                { label: 'Total Orders', value: ordersCount, sub: 'Placed via scanned QR codes', icon: <FiShoppingBag />, color: 'text-sky-500', bg: 'bg-sky-500/10', subColor: isDark ? 'text-slate-500' : 'text-slate-500' },
+                {
+                  label: 'Gross Sales',
+                  value: `₹${totalSales.toFixed(2)}`,
+                  sub: dateFilter === 'today'
+                    ? '✓ Today\'s checkouts inclusive'
+                    : dateFilter === 'month'
+                      ? '✓ This month\'s checkouts'
+                      : '✓ This year\'s checkouts',
+                  icon: '₹',
+                  color: 'text-amber-500',
+                  bg: 'bg-amber-500/10',
+                  subColor: isDark ? 'text-emerald-400' : 'text-emerald-600'
+                },
+                {
+                  label: 'Total Orders',
+                  value: ordersCount,
+                  sub: dateFilter === 'today'
+                    ? 'Placed today via scanned QRs'
+                    : dateFilter === 'month'
+                      ? 'Placed this month via scanned QRs'
+                      : 'Placed this year via scanned QRs',
+                  icon: <FiShoppingBag />,
+                  color: 'text-sky-500',
+                  bg: 'bg-sky-500/10',
+                  subColor: isDark ? 'text-slate-500' : 'text-slate-500'
+                },
                 { label: 'Active Tables', value: tables.length, sub: 'Active mapped locations', icon: <FiGrid />, color: 'text-purple-500', bg: 'bg-purple-500/10', subColor: isDark ? 'text-slate-500' : 'text-slate-500' },
                 { label: 'Pending Orders', value: pendingOrdersCount, sub: 'Awaiting acceptance from staff', icon: <FiCoffee />, color: 'text-rose-500', bg: 'bg-rose-500/10', subColor: isDark ? 'text-slate-500' : 'text-slate-500' },
               ].map(stat => (
@@ -1061,9 +1237,69 @@ export default function RestaurantAdmin() {
         {/* ── TAB 5: ORDERS ─────────────────────── */}
         {activeTab === 'orders' && (
           <div className="animate-fade-in space-y-6">
-            <div>
-              <h1 className={`text-3xl font-bold font-display tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>Active Table Orders</h1>
-              <p className={`text-sm mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Accept incoming orders, forward to Kitchen, or mark served.</p>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h1 className={`text-3xl font-bold font-display tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>Active Table Orders</h1>
+                <p className={`text-sm mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Accept incoming orders, forward to Kitchen, or mark served.</p>
+              </div>
+
+              {/* Premium Date Filter Dropdown */}
+              <div className="relative shrink-0 select-none">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsOrdersFilterDropdownOpen(!isOrdersFilterDropdownOpen);
+                  }}
+                  className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold tracking-wide transition-all shadow-sm hover:shadow cursor-pointer ${isDark
+                      ? 'bg-slate-900 border-slate-800 text-slate-200 hover:text-white hover:bg-slate-800/80'
+                      : 'bg-white border-slate-200 text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                >
+                  <FiCalendar className="text-amber-500 text-base" />
+                  <span>
+                    Show: {ordersDateFilter === 'today' ? 'Today' : ordersDateFilter === 'month' ? 'This Month' : 'This Year'}
+                  </span>
+                  <FiChevronDown className={`text-slate-400 transition-transform duration-300 ${isOrdersFilterDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isOrdersFilterDropdownOpen && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className={`absolute right-0 mt-2 w-48 rounded-2xl border shadow-2xl p-2 z-50 animate-fade-in divide-y ${isDark
+                        ? 'bg-slate-900 border-slate-800 divide-slate-800/50'
+                        : 'bg-white border-slate-200 divide-slate-100'
+                      }`}
+                  >
+                    {[
+                      { value: 'today', label: 'Today' },
+                      { value: 'month', label: 'This Month' },
+                      { value: 'year', label: 'This Year' }
+                    ].map((opt) => {
+                      const isSelected = ordersDateFilter === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          onClick={() => {
+                            setOrdersDateFilter(opt.value);
+                            setIsOrdersFilterDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${isSelected
+                              ? isDark
+                                ? 'bg-amber-500/10 text-amber-400'
+                                : 'bg-amber-50 text-amber-600'
+                              : isDark
+                                ? 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                            }`}
+                        >
+                          <span>{opt.label}</span>
+                          {isSelected && <FiCheck className="text-sm stroke-[3px]" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className={`rounded-2xl border overflow-hidden shadow-sm ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
@@ -1071,22 +1307,34 @@ export default function RestaurantAdmin() {
                 <table className="w-full text-left border-collapse text-sm">
                   <thead>
                     <tr className={`border-b text-xs font-semibold uppercase ${isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-400 bg-slate-50'}`}>
-                      <th className="px-6 py-3.5">Order ID / Time</th>
+                      <th className="px-6 py-3.5">Order ID</th>
+                      <th className="px-6 py-3.5">Date & Time</th>
                       <th className="px-6 py-3.5">Source</th>
                       <th className="px-6 py-3.5">Items</th>
                       <th className="px-6 py-3.5">Total Amount</th>
                       <th className="px-6 py-3.5">Status</th>
-                      <th className="px-6 py-3.5 text-right">Update Stage</th>
+                      <th className="px-6 py-3.5">Update Stage</th>
+                      <th className="px-6 py-3.5 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className={`divide-y ${isDark ? 'divide-slate-800 text-slate-300' : 'divide-slate-100 text-slate-700'}`}>
-                    {orders.map(order => {
+                    {filteredOrdersForDisplay.map(order => {
                       const itemSummary = order.items.map(i => `${i.name} x${i.quantity}`).join(', ');
                       return (
                         <tr key={order.id} className={`transition-colors ${isDark ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50/50'}`}>
                           <td className="px-6 py-4">
                             <span className={`font-mono font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>{order.id}</span>
-                            <div className={`text-[10px] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{new Date(order.createdAt).toLocaleTimeString()}</div>
+                          </td>
+                          <td className="px-6 py-4">
+                            {(() => {
+                              const { date, time } = formatOrderDateTime(order.createdAt);
+                              return (
+                                <div className="flex flex-col">
+                                  <span className={`text-xs font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{date}</span>
+                                  <span className={`text-[10px] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{time}</span>
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className={`px-6 py-4 font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{order.tableName || 'Table'}</td>
                           <td className="px-6 py-4 max-w-sm">
@@ -1108,7 +1356,7 @@ export default function RestaurantAdmin() {
                               {order.status}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-right">
+                          <td className="px-6 py-4">
                             <select value={order.status} onChange={(e) => handleUpdateStatus(order.id, e.target.value)} className={`border rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none focus:border-amber-500 ${isDark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
                               <option value="pending">Pending</option>
                               <option value="accepted">Accepted</option>
@@ -1119,11 +1367,20 @@ export default function RestaurantAdmin() {
                               <option value="cancelled">Cancelled</option>
                             </select>
                           </td>
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              onClick={() => setOrderToDelete(order)}
+                              className="p-2 rounded-xl bg-rose-500/10 text-rose-500 hover:text-white hover:bg-rose-500 transition-all cursor-pointer inline-flex items-center justify-center border border-rose-500/20"
+                              title="Delete Order Permanently"
+                            >
+                              <FiTrash2 className="text-sm" />
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
-                    {orders.length === 0 && (
-                      <tr><td colSpan="6" className={`text-center py-10 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>No active orders yet. Place one from the Menu!</td></tr>
+                    {filteredOrdersForDisplay.length === 0 && (
+                      <tr><td colSpan="8" className={`text-center py-10 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>No orders found for this timeframe. Place one from the Menu!</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1508,6 +1765,60 @@ export default function RestaurantAdmin() {
         restaurant={currentRest}
         isDark={isDark}
       />
+
+      {/* Delete Order Confirmation Modal */}
+      {orderToDelete && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className={`w-full max-w-md rounded-3xl border shadow-2xl overflow-hidden ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+            {/* Header */}
+            <div className={`p-6 border-b flex justify-between items-center ${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50'}`}>
+              <div className="flex items-center gap-2 text-rose-500">
+                <FiAlertTriangle className="text-xl animate-bounce" />
+                <h3 className={`text-lg font-black font-display tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  Delete Order
+                </h3>
+              </div>
+              <button
+                onClick={() => setOrderToDelete(null)}
+                className={`p-2 rounded-xl transition-all cursor-pointer hover:text-rose-500 ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
+              >
+                <FiX className="text-lg" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-4">
+              <p className={`text-sm leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                Are you sure you want to permanently delete this order? This action cannot be undone.
+              </p>
+              <div className={`p-4 rounded-2xl border text-xs font-mono space-y-1 ${isDark ? 'bg-slate-950/40 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                <div><span className="font-bold text-amber-500">Order ID:</span> {orderToDelete.id}</div>
+                <div><span className="font-bold text-amber-500">Table/Source:</span> {orderToDelete.tableName || 'Table'}</div>
+                <div><span className="font-bold text-amber-500">Amount:</span> ₹{(orderToDelete.grandTotal || orderToDelete.totalAmount || 0).toFixed(2)}</div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className={`px-6 py-4 border-t flex justify-end gap-3 ${isDark ? 'border-slate-800 bg-slate-950/20' : 'border-slate-100 bg-slate-50/50'}`}>
+              <button
+                onClick={() => setOrderToDelete(null)}
+                className={`px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer ${isDark
+                    ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
+                    : 'bg-slate-200 hover:bg-slate-300 text-slate-700 hover:text-slate-900'
+                  }`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteOrder(orderToDelete.id)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-sm transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+              >
+                <FiTrash2 /> Delete Order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
