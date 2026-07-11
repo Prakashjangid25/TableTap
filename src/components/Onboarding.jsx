@@ -168,69 +168,25 @@ export default function Onboarding() {
             </div>
           </div>
 
-          {/* Customer Ordering */}
-          <div className={`p-6 rounded-2xl ${isDark ? 'bg-slate-800/80 border-slate-700' : 'bg-white border-slate-200'} border flex flex-col justify-between shadow-2xl relative`}>
-            <span className="absolute top-3 right-3 bg-rose-500/10 text-rose-400 text-[10px] px-2 py-0.5 rounded-full font-bold border border-rose-500/20 uppercase tracking-widest">
-              Live Customer QR Scan
-            </span>
+          {/* Help & Support Center */}
+          <div
+            onClick={() => navigate('/support')}
+            className={`group cursor-pointer p-6 rounded-2xl ${isDark ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800/80' : 'bg-white border-slate-200 hover:bg-slate-50'} hover:border-rose-500/40 border transition-all duration-300 shadow-xl flex flex-col justify-between`}
+          >
             <div>
-              <div className={`w-12 h-12 rounded-xl ${isDark ? 'bg-slate-700/50 border-slate-600/30' : 'bg-slate-100 border-slate-200'} flex items-center justify-center text-rose-400 mb-5 border`}>
-                <FiShoppingBag className="text-2xl" />
+              <div className={`w-12 h-12 rounded-xl ${isDark ? 'bg-slate-700/50 border-slate-600/30' : 'bg-slate-100 border-slate-200'} flex items-center justify-center text-rose-400 group-hover:scale-110 border transition-transform duration-300 mb-5`}>
+                <FiHelpCircle className="text-2xl" />
               </div>
-              <h3 className={`text-xl font-bold font-display mb-3 ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                4. Customer Digital Menu
+              <h3 className={`text-xl font-bold font-display mb-2 ${isDark ? 'text-white' : 'text-slate-900'} group-hover:text-rose-400 transition-colors`}>
+                4. Help & Support Center
               </h3>
-              <p className={`${isDark ? 'text-slate-400' : 'text-slate-600'} text-sm font-light leading-relaxed mb-5`}>
-                Scan simulation. Choose a seeded premium restaurant and table to immediately enter the beautiful mobile-first digital menu and place mock orders.
+              <p className={`${isDark ? 'text-slate-400' : 'text-slate-600'} text-sm font-light leading-relaxed mb-6`}>
+                Got questions or need technical help? Access our direct support channels, view helpful setup tips, and find answers to frequently asked questions.
               </p>
-
-              {/* Simulation Selectors */}
-              <div className={`space-y-3 mb-6 ${isDark ? 'bg-slate-900/40 border-slate-700/40 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'} p-3 rounded-lg border text-xs`}>
-                <div className="flex justify-between items-center">
-                  <span>Select Store:</span>
-                  <select
-                    value={selectedRest}
-                    onChange={handleRestChange}
-                    disabled={restaurants.length === 0}
-                    className={`border rounded px-2 py-1 text-xs focus:outline-none focus:border-emerald-500 disabled:opacity-50 ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}
-                  >
-                    {restaurants.length === 0 ? (
-                      <option value="">No active stores found</option>
-                    ) : (
-                      restaurants.map(r => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
-                      ))
-                    )}
-                  </select>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span>Select Table:</span>
-                  <select
-                    value={selectedTable}
-                    onChange={(e) => setSelectedTable(e.target.value)}
-                    disabled={tables.length === 0}
-                    className={`border rounded px-2 py-1 text-xs focus:outline-none focus:border-emerald-500 disabled:opacity-50 ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}
-                  >
-                    {tables.length === 0 ? (
-                      <option value="">No tables configured</option>
-                    ) : (
-                      tables.map(t => (
-                        <option key={t.id} value={t.id}>{t.tableName}</option>
-                      ))
-                    )}
-                  </select>
-                </div>
-              </div>
             </div>
-
-            <button
-              onClick={handleLaunchCustomer}
-              disabled={!selectedRest || !selectedTable}
-              className="w-full py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white font-semibold text-sm transition-all shadow-lg hover:shadow-rose-500/20 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-500"
-            >
-              <FiCompass className="text-lg animate-spin" style={{ animationDuration: '6s' }} />
-              {restaurants.length === 0 ? 'Configure a Store First' : 'Simulate QR Code Scan'}
-            </button>
+            <div className="flex items-center text-rose-400 text-sm font-medium gap-1">
+              Open Support Center <FiChevronRight />
+            </div>
           </div>
 
         </div>

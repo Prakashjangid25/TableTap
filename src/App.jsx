@@ -5,6 +5,7 @@ import SuperAdmin from './components/SuperAdmin.jsx';
 import RestaurantAdmin from './components/RestaurantAdmin.jsx';
 import KitchenPanel from './components/KitchenPanel.jsx';
 import CustomerMenu from './components/CustomerMenu.jsx';
+import SupportCenter from './components/SupportCenter.jsx';
 import { seedDatabaseIfEmpty } from './dbService';
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
       <Route path="/admin" element={<RestaurantAdmin />} />
       <Route path="/kitchen" element={<KitchenPanel />} />
       <Route path="/customer" element={<CustomerMenu />} />
+      <Route path="/support" element={<SupportCenter />} />
       <Route path="*" element={<Onboarding />} />
     </Routes>
   );
