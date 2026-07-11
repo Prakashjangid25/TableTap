@@ -306,6 +306,69 @@
         "pin",
         "status"
       ]
+    },
+    "Floor": {
+      "title": "Floor",
+      "description": "A floor level or section within a restaurant",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "restaurantId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "order": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "restaurantId",
+        "name"
+      ]
+    },
+    "FloorTable": {
+      "title": "FloorTable",
+      "description": "Visual layout and seating capacity for a table placed on a floor",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tableName": {
+          "type": "string"
+        },
+        "capacity": {
+          "type": "number"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "floorId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "tableName",
+        "capacity",
+        "x",
+        "y",
+        "floorId"
+      ]
     }
   },
   "firestore": {
@@ -336,6 +399,14 @@
     "/restaurants/{restaurantId}/kitchenAccess/{accessId}": {
       "schema": "KitchenAccess",
       "description": "Kitchen access configurations for secure KDS logins"
+    },
+    "/restaurants/{restaurantId}/floors/{floorId}": {
+      "schema": "Floor",
+      "description": "Restaurant floors or sections"
+    },
+    "/restaurants/{restaurantId}/floors/{floorId}/floorTables/{floorTableId}": {
+      "schema": "FloorTable",
+      "description": "Tables placed in a specific restaurant floor layout"
     }
   }
 }

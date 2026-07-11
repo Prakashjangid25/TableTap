@@ -20,8 +20,10 @@ import {
   FiSun,
   FiMoon,
   FiX,
-  FiEdit2
+  FiEdit2,
+  FiMap
 } from 'react-icons/fi';
+import FloorMapManager from './FloorMapManager.jsx';
 import { db } from '../firebase';
 import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import QRPrintSystem from './QRPrintSystem.jsx';
@@ -724,6 +726,7 @@ export default function RestaurantAdmin() {
               { id: 'categories', label: 'Categories', icon: <FiFolder /> },
               { id: 'products', label: 'Manage Products', icon: <FiCoffee /> },
               { id: 'tables', label: 'Table QRs', icon: <FiGrid /> },
+              { id: 'floormap', label: 'Floor Map', icon: <FiMap /> },
               { id: 'orders', label: 'Orders', icon: <FiFileText />, badge: pendingOrdersCount },
               { id: 'coupons', label: 'Coupons & Deals', icon: <FiTag /> },
               { id: 'kds', label: 'KDS Management', icon: <FiPrinter /> },
@@ -1391,6 +1394,15 @@ export default function RestaurantAdmin() {
               )}
             </div>
           </div>
+        )}
+
+        {/* ── TAB FLOORMAP: FLOOR MAP ─────────── */}
+        {activeTab === 'floormap' && currentRest && (
+          <FloorMapManager
+            restaurantId={currentRest.id}
+            physicalTables={tables}
+            orders={orders}
+          />
         )}
 
         {/* ── TAB 7: SETTINGS ───────────────────── */}
