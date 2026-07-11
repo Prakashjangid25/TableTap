@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { jsPDF } from 'jspdf';
 import {
   FiHome,
   FiFolder,
@@ -23,7 +24,8 @@ import {
   FiEdit2,
   FiMap,
   FiCalendar,
-  FiChevronDown
+  FiChevronDown,
+  FiDownload
 } from 'react-icons/fi';
 import FloorMapManager from './FloorMapManager.jsx';
 import { db } from '../firebase';
@@ -76,6 +78,13 @@ export default function RestaurantAdmin() {
   const [ordersDateFilter, setOrdersDateFilter] = useState('today');
   const [isOrdersFilterDropdownOpen, setIsOrdersFilterDropdownOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState(null);
+
+  // Export & Delete states
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [selectedExportMonth, setSelectedExportMonth] = useState('');
+  const [exportFormats, setExportFormats] = useState({ pdf: true, xlsx: true, csv: true });
+  const [exportStep, setExportStep] = useState(1); // 1 = select & export, 2 = confirm delete prompt
+  const [isExporting, setIsExporting] = useState(false);
 
   // Close custom dropdowns on click outside
   useEffect(() => {
@@ -593,6 +602,275 @@ export default function RestaurantAdmin() {
       refreshCollections();
     } catch (err) {
       console.error("Error permanently deleting order: ", err);
+    }
+  };
+
+  const getExportMonthOptions = () => {
+    const options = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const label = d.toLocaleString('default', { month: 'long', year: 'numeric' });
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      options.push({ label, value });
+    }
+    return options;
+  };
+
+  const getOrdersForMonth = (monthVal) => {
+    if (!monthVal) return [];
+    const [year, month] = monthVal.split('-').map(Number);
+    return orders.filter(o => {
+      if (!o.createdAt) return false;
+      const od = new Date(o.createdAt);
+      if (isNaN(od.getTime())) return false;
+      return od.getFullYear() === year && (od.getMonth() + 1) === month;
+    });
+  };
+
+  const handleExportFiles = async () => {
+    if (!selectedExportMonth) return;
+    setIsExporting(true);
+
+    const ordersForMonth = getOrdersForMonth(selectedExportMonth);
+    const monthsList = getExportMonthOptions();
+    const selectedMonthLabel = monthsList.find(m => m.value === selectedExportMonth)?.label || selectedExportMonth;
+
+    if (ordersForMonth.length === 0) {
+      alert("No orders found for the selected month.");
+      setIsExporting(false);
+      return;
+    }
+
+    // PDF Export
+    if (exportFormats.pdf) {
+      try {
+        const docPDF = new jsPDF('p', 'mm', 'a4');
+        docPDF.setFont("helvetica", "normal");
+
+        // Title
+        docPDF.setFontSize(18);
+        docPDF.setTextColor(30, 41, 59);
+        docPDF.text("MONTHLY ORDERS REPORT", 14, 20);
+
+        // Meta Information
+        docPDF.setFontSize(10);
+        docPDF.setTextColor(100, 116, 139);
+        docPDF.text(`Restaurant: ${currentRest?.name || 'TableTap Restaurant'}`, 14, 28);
+        docPDF.text(`Address: ${currentRest?.address || 'N/A'}`, 14, 34);
+        docPDF.text(`Period: ${selectedMonthLabel}`, 14, 40);
+        docPDF.text(`Exported On: ${new Date().toLocaleDateString()}`, 14, 46);
+
+        // Horizontal Rule
+        docPDF.setDrawColor(226, 232, 240);
+        docPDF.line(14, 52, 196, 52);
+
+        // Table Header
+        docPDF.setFontSize(9);
+        docPDF.setFont("helvetica", "bold");
+        docPDF.setTextColor(71, 85, 105);
+        docPDF.text("ID", 14, 60);
+        docPDF.text("Date & Time", 35, 60);
+        docPDF.text("Table", 70, 60);
+        docPDF.text("Items & Qty", 90, 60);
+        docPDF.text("Total", 160, 60);
+        docPDF.text("Status", 180, 60);
+
+        docPDF.line(14, 64, 196, 64);
+        docPDF.setFont("helvetica", "normal");
+        docPDF.setTextColor(51, 65, 85);
+
+        let y = 70;
+        ordersForMonth.forEach((o) => {
+          if (y > 275) {
+            docPDF.addPage();
+            y = 20;
+            docPDF.setFont("helvetica", "bold");
+            docPDF.text("ID", 14, y);
+            docPDF.text("Date & Time", 35, y);
+            docPDF.text("Table", 70, y);
+            docPDF.text("Items & Qty", 90, y);
+            docPDF.text("Total", 160, y);
+            docPDF.text("Status", 180, y);
+            docPDF.line(14, y + 4, 196, y + 4);
+            docPDF.setFont("helvetica", "normal");
+            y += 10;
+          }
+
+          const { date, time } = formatOrderDateTime(o.createdAt);
+          const tableNo = o.tableName || 'Table';
+          const totalStr = `INR ${(o.grandTotal || o.totalAmount || 0).toFixed(0)}`;
+          const statusStr = o.status || 'Pending';
+
+          const itemsStr = o.items.map(i => `${i.name} (x${i.quantity})`).join(', ');
+          const itemText = itemsStr.length > 38 ? itemsStr.substring(0, 35) + '...' : itemsStr;
+
+          docPDF.text(o.id.substring(0, 10), 14, y);
+          docPDF.text(`${date} ${time}`, 35, y);
+          docPDF.text(tableNo, 70, y);
+          docPDF.text(itemText, 90, y);
+          docPDF.text(totalStr, 160, y);
+          docPDF.text(statusStr, 180, y);
+
+          y += 8;
+        });
+
+        docPDF.save(`Orders_${selectedMonthLabel.replace(/\s+/g, '_')}.pdf`);
+      } catch (err) {
+        console.error("Error generating PDF: ", err);
+      }
+    }
+
+    // Excel Export
+    if (exportFormats.xlsx) {
+      try {
+        const excelTemplate = `
+          <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+          <head>
+            <meta charset="utf-8" />
+            <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Orders Export</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+            <style>
+              body { font-family: Arial, sans-serif; }
+              .header { font-size: 16px; font-weight: bold; margin-bottom: 20px; }
+              table { border-collapse: collapse; width: 100%; }
+              th { background-color: #f2f2f2; border: 1px solid #dddddd; padding: 8px; text-align: left; font-weight: bold; }
+              td { border: 1px solid #dddddd; padding: 8px; text-align: left; }
+              .meta-table { margin-bottom: 20px; }
+              .meta-table td { border: none; padding: 4px; font-size: 12px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">Monthly Orders Export - ${currentRest?.name || 'TableTap'}</div>
+            <table class="meta-table">
+              <tr><td><strong>Restaurant:</strong></td><td>${currentRest?.name || 'TableTap'}</td></tr>
+              <tr><td><strong>Address:</strong></td><td>${currentRest?.address || 'N/A'}</td></tr>
+              <tr><td><strong>Month & Year:</strong></td><td>${selectedMonthLabel}</td></tr>
+              <tr><td><strong>Export Date:</strong></td><td>${new Date().toLocaleDateString()}</td></tr>
+            </table>
+            <table>
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Date</th>
+                  <th>Time</th>
+                  <th>Table Number</th>
+                  <th>Items</th>
+                  <th>Quantity</th>
+                  <th>Total Amount (INR)</th>
+                  <th>Payment Status</th>
+                  <th>Order Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${ordersForMonth.map(o => {
+          const { date, time } = formatOrderDateTime(o.createdAt);
+          const itemNames = o.items.map(i => i.name).join(', ');
+          const itemQuantities = o.items.map(i => i.quantity).join(', ');
+          return `
+                    <tr>
+                      <td>${o.id}</td>
+                      <td>${date}</td>
+                      <td>${time}</td>
+                      <td>${o.tableName || 'Table'}</td>
+                      <td>${itemNames}</td>
+                      <td>${itemQuantities}</td>
+                      <td>${(o.grandTotal || o.totalAmount || 0).toFixed(2)}</td>
+                      <td>${o.paymentStatus || 'Pending'}</td>
+                      <td>${o.status}</td>
+                    </tr>
+                  `;
+        }).join('')}
+              </tbody>
+            </table>
+          </body>
+          </html>
+        `;
+
+        const blob = new Blob([excelTemplate], { type: 'application/vnd.ms-excel;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Orders_${selectedMonthLabel.replace(/\s+/g, '_')}.xls`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error("Error generating Excel: ", err);
+      }
+    }
+
+    // CSV Export
+    if (exportFormats.csv) {
+      try {
+        const metadata = [
+          `Restaurant Name,${(currentRest?.name || 'TableTap Restaurant').replace(/,/g, ' ')}`,
+          `Restaurant Address,${(currentRest?.address || 'N/A').replace(/,/g, ' ')}`,
+          `Month & Year,${selectedMonthLabel}`,
+          `Export Date,${new Date().toLocaleDateString()}`,
+          ``,
+        ];
+
+        const headers = ["Order ID", "Date", "Time", "Table Number", "Items", "Quantity", "Total Amount (INR)", "Payment Status", "Order Status"];
+        const rows = ordersForMonth.map(o => {
+          const { date, time } = formatOrderDateTime(o.createdAt);
+          const itemNames = o.items.map(i => i.name).join('; ');
+          const itemQuantities = o.items.map(i => i.quantity).join('; ');
+          const totalAmount = (o.grandTotal || o.totalAmount || 0).toFixed(2);
+          return [
+            o.id,
+            date,
+            time,
+            o.tableName || 'Table',
+            `"${itemNames.replace(/"/g, '""')}"`,
+            `"${itemQuantities}"`,
+            totalAmount,
+            o.paymentStatus || 'Pending',
+            o.status
+          ];
+        });
+
+        const csvContent = [...metadata, headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Orders_${selectedMonthLabel.replace(/\s+/g, '_')}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error("Error generating CSV: ", err);
+      }
+    }
+
+    setIsExporting(false);
+    setExportStep(2); // Prompt for deletion step next!
+  };
+
+  const handleDeleteMonthOrders = async () => {
+    if (!currentRest || !selectedExportMonth) return;
+    try {
+      const ordersForMonth = getOrdersForMonth(selectedExportMonth);
+      if (ordersForMonth.length === 0) return;
+
+      const deletePromises = ordersForMonth.map(o => {
+        const orderRef = doc(db, "restaurants", currentRest.id, "orders", o.id);
+        return deleteDoc(orderRef);
+      });
+
+      await Promise.all(deletePromises);
+      setAdminSuccessToast(`Successfully deleted ${ordersForMonth.length} exported orders.`);
+      setTimeout(() => setAdminSuccessToast(''), 3000);
+
+      // Close modal and reset states
+      setIsExportModalOpen(false);
+      setSelectedExportMonth('');
+      setExportStep(1);
+      refreshCollections();
+    } catch (err) {
+      console.error("Error permanently deleting month orders: ", err);
     }
   };
 
@@ -1243,62 +1521,82 @@ export default function RestaurantAdmin() {
                 <p className={`text-sm mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Accept incoming orders, forward to Kitchen, or mark served.</p>
               </div>
 
-              {/* Premium Date Filter Dropdown */}
-              <div className="relative shrink-0 select-none">
+              {/* Premium Actions Container */}
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Premium Export & Delete Button */}
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsOrdersFilterDropdownOpen(!isOrdersFilterDropdownOpen);
+                  onClick={() => {
+                    setExportStep(1);
+                    setSelectedExportMonth(getExportMonthOptions()[0]?.value || '');
+                    setIsExportModalOpen(true);
                   }}
-                  className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold tracking-wide transition-all shadow-sm hover:shadow cursor-pointer ${isDark
-                      ? 'bg-slate-900 border-slate-800 text-slate-200 hover:text-white hover:bg-slate-800/80'
-                      : 'bg-white border-slate-200 text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold tracking-wide transition-all shadow-sm hover:shadow cursor-pointer ${isDark
+                      ? 'bg-slate-900 border-slate-800 text-amber-400 hover:text-amber-300 hover:bg-slate-800/80'
+                      : 'bg-amber-50 border-amber-200 text-amber-700 hover:text-amber-800 hover:bg-amber-100/50'
                     }`}
+                  title="Export old monthly orders and delete them permanently"
                 >
-                  <FiCalendar className="text-amber-500 text-base" />
-                  <span>
-                    Show: {ordersDateFilter === 'today' ? 'Today' : ordersDateFilter === 'month' ? 'This Month' : 'This Year'}
-                  </span>
-                  <FiChevronDown className={`text-slate-400 transition-transform duration-300 ${isOrdersFilterDropdownOpen ? 'rotate-180' : ''}`} />
+                  <FiDownload className="text-base shrink-0" />
+                  <span>Export & Delete</span>
                 </button>
 
-                {isOrdersFilterDropdownOpen && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className={`absolute right-0 mt-2 w-48 rounded-2xl border shadow-2xl p-2 z-50 animate-fade-in divide-y ${isDark
-                        ? 'bg-slate-900 border-slate-800 divide-slate-800/50'
-                        : 'bg-white border-slate-200 divide-slate-100'
+                {/* Premium Date Filter Dropdown */}
+                <div className="relative shrink-0 select-none">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsOrdersFilterDropdownOpen(!isOrdersFilterDropdownOpen);
+                    }}
+                    className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold tracking-wide transition-all shadow-sm hover:shadow cursor-pointer ${isDark
+                        ? 'bg-slate-900 border-slate-800 text-slate-200 hover:text-white hover:bg-slate-800/80'
+                        : 'bg-white border-slate-200 text-slate-700 hover:text-slate-900 hover:bg-slate-50'
                       }`}
                   >
-                    {[
-                      { value: 'today', label: 'Today' },
-                      { value: 'month', label: 'This Month' },
-                      { value: 'year', label: 'This Year' }
-                    ].map((opt) => {
-                      const isSelected = ordersDateFilter === opt.value;
-                      return (
-                        <button
-                          key={opt.value}
-                          onClick={() => {
-                            setOrdersDateFilter(opt.value);
-                            setIsOrdersFilterDropdownOpen(false);
-                          }}
-                          className={`w-full text-left px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${isSelected
-                              ? isDark
-                                ? 'bg-amber-500/10 text-amber-400'
-                                : 'bg-amber-50 text-amber-600'
-                              : isDark
-                                ? 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                            }`}
-                        >
-                          <span>{opt.label}</span>
-                          {isSelected && <FiCheck className="text-sm stroke-[3px]" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                    <FiCalendar className="text-amber-500 text-base" />
+                    <span>
+                      Show: {ordersDateFilter === 'today' ? 'Today' : ordersDateFilter === 'month' ? 'This Month' : 'This Year'}
+                    </span>
+                    <FiChevronDown className={`text-slate-400 transition-transform duration-300 ${isOrdersFilterDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {isOrdersFilterDropdownOpen && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className={`absolute right-0 mt-2 w-48 rounded-2xl border shadow-2xl p-2 z-50 animate-fade-in divide-y ${isDark
+                          ? 'bg-slate-900 border-slate-800 divide-slate-800/50'
+                          : 'bg-white border-slate-200 divide-slate-100'
+                        }`}
+                    >
+                      {[
+                        { value: 'today', label: 'Today' },
+                        { value: 'month', label: 'This Month' },
+                        { value: 'year', label: 'This Year' }
+                      ].map((opt) => {
+                        const isSelected = ordersDateFilter === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            onClick={() => {
+                              setOrdersDateFilter(opt.value);
+                              setIsOrdersFilterDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${isSelected
+                                ? isDark
+                                  ? 'bg-amber-500/10 text-amber-400'
+                                  : 'bg-amber-50 text-amber-600'
+                                : isDark
+                                  ? 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+                                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                              }`}
+                          >
+                            <span>{opt.label}</span>
+                            {isSelected && <FiCheck className="text-sm stroke-[3px]" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1816,6 +2114,198 @@ export default function RestaurantAdmin() {
                 <FiTrash2 /> Delete Order
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export & Delete Old Orders Modal */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className={`w-full max-w-lg rounded-3xl border shadow-2xl overflow-hidden ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+
+            {/* Header */}
+            <div className={`p-6 border-b flex justify-between items-center ${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50'}`}>
+              <div className="flex items-center gap-2 text-amber-500">
+                <FiDownload className="text-xl animate-pulse" />
+                <h3 className={`text-lg font-black font-display tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  {exportStep === 1 ? 'Export Monthly Orders' : 'Export Completed'}
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setIsExportModalOpen(false);
+                  setExportStep(1);
+                  setSelectedExportMonth('');
+                }}
+                className={`p-2 rounded-xl transition-all cursor-pointer hover:text-amber-500 ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
+              >
+                <FiX className="text-lg" />
+              </button>
+            </div>
+
+            {/* STEP 1 & 2: Select Month & Formats */}
+            {exportStep === 1 && (
+              <div className="p-6 space-y-6">
+                <div>
+                  <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Select Month & Year
+                  </label>
+                  <select
+                    value={selectedExportMonth}
+                    onChange={(e) => setSelectedExportMonth(e.target.value)}
+                    className={`w-full p-3.5 rounded-2xl border text-sm font-semibold tracking-wide focus:outline-none focus:border-amber-500 transition-colors ${isDark
+                        ? 'bg-slate-950 border-slate-800 text-slate-200'
+                        : 'bg-slate-50 border-slate-200 text-slate-800'
+                      }`}
+                  >
+                    <option value="" disabled>-- Choose Month --</option>
+                    {getExportMonthOptions().map(opt => {
+                      const count = getOrdersForMonth(opt.value).length;
+                      return (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label} ({count} orders)
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <div>
+                  <label className={`block text-xs font-bold uppercase tracking-wider mb-3 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Select Export Formats
+                  </label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { key: 'pdf', label: 'PDF Report', ext: '.pdf' },
+                      { key: 'xlsx', label: 'Excel Sheet', ext: '.xlsx' },
+                      { key: 'csv', label: 'CSV File', ext: '.csv' }
+                    ].map(fmt => {
+                      const isSelected = exportFormats[fmt.key];
+                      return (
+                        <button
+                          key={fmt.key}
+                          type="button"
+                          onClick={() => setExportFormats(prev => ({ ...prev, [fmt.key]: !prev[fmt.key] }))}
+                          className={`p-4 rounded-2xl border flex flex-col items-center justify-center gap-2 transition-all cursor-pointer text-center group ${isSelected
+                              ? isDark
+                                ? 'bg-amber-500/10 border-amber-500/50 text-amber-400'
+                                : 'bg-amber-50 border-amber-200 text-amber-700 font-bold'
+                              : isDark
+                                ? 'bg-slate-950/40 border-slate-800 text-slate-400 hover:border-slate-700'
+                                : 'bg-slate-50/50 border-slate-100 text-slate-500 hover:border-slate-200'
+                            }`}
+                        >
+                          <span className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition-colors ${isSelected
+                              ? 'bg-amber-500 text-slate-950'
+                              : isDark ? 'bg-slate-800 text-slate-500' : 'bg-slate-200 text-slate-500'
+                            }`}>
+                            {isSelected ? '✓' : ''}
+                          </span>
+                          <span className="text-xs font-bold tracking-tight">{fmt.label}</span>
+                          <span className="text-[10px] opacity-60 font-mono">{fmt.ext}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {selectedExportMonth && (
+                  <div className={`p-4 rounded-2xl border flex items-center gap-3 text-xs ${isDark ? 'bg-slate-950/50 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
+                    }`}>
+                    <FiAlertTriangle className="text-amber-500 text-lg shrink-0" />
+                    <span>
+                      Found <strong>{getOrdersForMonth(selectedExportMonth).length}</strong> orders for the selected month.
+                    </span>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className={`pt-4 border-t flex justify-end gap-3 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
+                  <button
+                    type="button"
+                    onClick={() => setIsExportModalOpen(false)}
+                    className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${isDark
+                        ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
+                        : 'bg-slate-200 hover:bg-slate-300 text-slate-700 hover:text-slate-900'
+                      }`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedExportMonth || (!exportFormats.pdf && !exportFormats.xlsx && !exportFormats.csv) || getOrdersForMonth(selectedExportMonth).length === 0 || isExporting}
+                    onClick={handleExportFiles}
+                    className="px-5 py-2.5 rounded-xl text-sm font-bold shadow-md flex items-center gap-2 transition-all cursor-pointer text-slate-950 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isExporting ? 'Exporting...' : 'Export & Continue'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3 & 4: Confirm Permanent Deletion */}
+            {exportStep === 2 && (
+              <div className="p-6 space-y-6">
+                <div className="flex flex-col items-center text-center space-y-3">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center text-3xl">
+                    ✓
+                  </div>
+                  <div>
+                    <h4 className={`text-xl font-black font-display tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                      Export Completed
+                    </h4>
+                    <p className={`text-sm mt-1 leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                      Your selected month has been successfully exported.
+                    </p>
+                  </div>
+                </div>
+
+                <div className={`p-5 rounded-2xl border border-dashed space-y-3 ${isDark ? 'bg-rose-950/10 border-rose-500/20' : 'bg-rose-50/30 border-rose-500/10'
+                  }`}>
+                  <div className="flex items-start gap-2.5 text-rose-500">
+                    <FiAlertTriangle className="text-lg shrink-0 mt-0.5" />
+                    <div>
+                      <h5 className="text-sm font-bold tracking-tight">Database Cleanup Option</h5>
+                      <p className={`text-xs mt-1 leading-relaxed ${isDark ? 'text-rose-400/80' : 'text-rose-700/80'}`}>
+                        Do you also want to permanently delete these orders from the database?
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`p-3.5 rounded-xl border text-xs font-mono flex flex-col gap-1 ${isDark ? 'bg-slate-950/40 border-slate-800/80 text-slate-400' : 'bg-slate-50 border-slate-200/60 text-slate-600'
+                    }`}>
+                    <div><span className="font-bold text-amber-500">Selected Month:</span> {getExportMonthOptions().find(m => m.value === selectedExportMonth)?.label || selectedExportMonth}</div>
+                    <div><span className="font-bold text-amber-500">Total Cleared:</span> {getOrdersForMonth(selectedExportMonth).length} Orders</div>
+                    <div className="text-[10px] text-rose-500 font-bold mt-1 uppercase">★ Action cannot be undone</div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className={`pt-4 border-t flex flex-col sm:flex-row gap-3 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsExportModalOpen(false);
+                      setExportStep(1);
+                      setSelectedExportMonth('');
+                    }}
+                    className={`flex-1 px-5 py-3 rounded-xl text-sm font-bold transition-all cursor-pointer text-center ${isDark
+                        ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
+                        : 'bg-slate-200 hover:bg-slate-300 text-slate-700 hover:text-slate-900'
+                      }`}
+                  >
+                    Keep Orders
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteMonthOrders}
+                    className="flex-1 px-5 py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-sm transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <FiTrash2 /> Delete From Database
+                  </button>
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       )}
