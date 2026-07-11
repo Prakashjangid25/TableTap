@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { 
-  FiClock, 
-  FiCheckCircle, 
-  FiVolume2, 
-  FiVolumeX, 
-  FiPlay, 
+import {
+  FiClock,
+  FiCheckCircle,
+  FiVolume2,
+  FiVolumeX,
+  FiPlay,
   FiChevronLeft,
   FiShoppingBag,
   FiBell,
@@ -13,27 +13,77 @@ import {
   FiCoffee
 } from 'react-icons/fi';
 import { getOrders, updateOrderStatus, getRestaurants } from '../dbService';
+import { db } from '../firebase';
+import { collection, query, getDocs, getDoc, doc, updateDoc } from 'firebase/firestore';
 
 export default function KitchenPanel() {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const restIdFromUrl = searchParams.get('r') || 'gourmet_garden';
 
-  const [selectedRestId, setSelectedRestId] = useState(restIdFromUrl);
+  const [selectedRestId, setSelectedRestId] = useState('');
   const [restaurants, setRestaurants] = useState([]);
   const [currentRest, setCurrentRest] = useState(null);
-  
+
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [lastOrderCount, setLastOrderCount] = useState(0);
   const [notification, setNotification] = useState('');
 
+  // Authentication & session state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentSession, setCurrentSession] = useState(null);
+  const [sessionChecking, setSessionChecking] = useState(true);
+
+  // Form states
+  const [accessKeyInput, setAccessKeyInput] = useState('');
+  const [pinInput, setPINInput] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
   // Active elapsed-time timers state (re-renders every second)
   const [secondsElapsed, setSecondsElapsed] = useState(0);
 
+  // Session verification on mount
+  useEffect(() => {
+    async function checkExistingSession() {
+      try {
+        const stored = localStorage.getItem('kds_session');
+        if (stored) {
+          const session = JSON.parse(stored);
+          const docRef = doc(db, "restaurants", session.restaurantId, "kitchenAccess", session.kitchenAccessId);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.status === 'active' && data.accessKey === session.accessKey && data.pin === session.pin) {
+              setCurrentSession(session);
+              setSelectedRestId(session.restaurantId);
+              setIsAuthenticated(true);
+              setSessionChecking(false);
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Session verification failed:", err);
+      }
+      localStorage.removeItem('kds_session');
+      setIsAuthenticated(false);
+      setSessionChecking(false);
+    }
+    checkExistingSession();
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('kds_session');
+    setIsAuthenticated(false);
+    setCurrentSession(null);
+    setCurrentRest(null);
+    setOrders([]);
+  };
+
   useEffect(() => {
     async function loadMeta() {
+      if (!selectedRestId) return;
       const list = await getRestaurants();
       setRestaurants(list);
       const matched = list.find(r => r.id === selectedRestId);
@@ -45,7 +95,22 @@ export default function KitchenPanel() {
   useEffect(() => {
     let interval;
     async function fetchOrders() {
-      if (!selectedRestId) return;
+      if (!selectedRestId || !isAuthenticated) return;
+
+      // Verify active session status
+      try {
+        if (currentSession) {
+          const docRef = doc(db, "restaurants", currentSession.restaurantId, "kitchenAccess", currentSession.kitchenAccessId);
+          const docSnap = await getDoc(docRef);
+          if (!docSnap.exists() || docSnap.data().status !== 'active' || docSnap.data().accessKey !== currentSession.accessKey || docSnap.data().pin !== currentSession.pin) {
+            handleLogout();
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Background session verification failed:", err);
+      }
+
       const data = await getOrders(selectedRestId);
       setOrders(data);
 
@@ -61,11 +126,13 @@ export default function KitchenPanel() {
       setLastOrderCount(activeCount);
     }
 
-    fetchOrders();
-    interval = setInterval(fetchOrders, 4000); // Polling Firestore/LocalStorage
+    if (isAuthenticated) {
+      fetchOrders();
+      interval = setInterval(fetchOrders, 4000); // Polling Firestore/LocalStorage
+    }
 
     return () => clearInterval(interval);
-  }, [selectedRestId, lastOrderCount, soundEnabled]);
+  }, [selectedRestId, lastOrderCount, soundEnabled, isAuthenticated, currentSession]);
 
   // Global ticking timer for active orders' age
   useEffect(() => {
@@ -113,14 +180,172 @@ export default function KitchenPanel() {
     return `${mins}:${secs < 10 ? '0' : ''}${secs} min`;
   };
 
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    setLoginLoading(true);
+
+    try {
+      const keyToSearch = accessKeyInput.trim();
+      const pinToSearch = pinInput.trim();
+
+      const allRestaurants = await getRestaurants();
+
+      let matchedRestaurant = null;
+      let matchedAccess = null;
+
+      for (const rest of allRestaurants) {
+        const accessColRef = collection(db, "restaurants", rest.id, "kitchenAccess");
+        const q = query(accessColRef);
+        const querySnapshot = await getDocs(q);
+
+        const accessList = querySnapshot.docs.map(doc => doc.data());
+        const found = accessList.find(acc => acc.accessKey === keyToSearch && acc.pin === pinToSearch);
+        if (found) {
+          matchedRestaurant = rest;
+          matchedAccess = found;
+          break;
+        }
+      }
+
+      if (!matchedAccess) {
+        setLoginError("Invalid Kitchen Access Key or PIN. Please check and try again.");
+        setLoginLoading(false);
+        return;
+      }
+
+      if (matchedAccess.status !== 'active') {
+        setLoginError("This Kitchen Access Screen has been disabled by the administrator.");
+        setLoginLoading(false);
+        return;
+      }
+
+      // Update last used timestamp in Firestore
+      const docRef = doc(db, "restaurants", matchedRestaurant.id, "kitchenAccess", matchedAccess.id);
+      await updateDoc(docRef, {
+        lastUsed: new Date().toISOString()
+      });
+
+      const sessionData = {
+        restaurantId: matchedRestaurant.id,
+        restaurantName: matchedRestaurant.name,
+        kitchenAccessId: matchedAccess.id,
+        kitchenName: matchedAccess.kitchenName,
+        accessKey: matchedAccess.accessKey,
+        pin: matchedAccess.pin
+      };
+      localStorage.setItem('kds_session', JSON.stringify(sessionData));
+
+      setCurrentSession(sessionData);
+      setSelectedRestId(matchedRestaurant.id);
+      setCurrentRest(matchedRestaurant);
+      setIsAuthenticated(true);
+    } catch (err) {
+      console.error("Login error:", err);
+      setLoginError("An error occurred during verification. Please try again.");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  if (sessionChecking) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm font-medium text-slate-400">Verifying secure kitchen terminal session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Background glow effects */}
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-amber-500/5 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-pink-500/5 blur-[120px] pointer-events-none" />
+
+        <div className="w-full max-w-md p-8 rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl z-10 space-y-6">
+          <div className="text-center space-y-2">
+            <div className="inline-flex p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 text-2xl mb-2">
+              <FiCoffee />
+            </div>
+            <h2 className="text-2xl font-bold font-display tracking-tight text-white">Kitchen Display System</h2>
+            <p className="text-xs text-slate-400 leading-relaxed max-w-xs mx-auto">
+              Please enter your Kitchen Access Key and PIN to securely link this terminal screen to your kitchen station.
+            </p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Kitchen Access Key</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. KDS-ABC123"
+                value={accessKeyInput}
+                onChange={(e) => setAccessKeyInput(e.target.value.toUpperCase())}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-amber-500 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Kitchen PIN</label>
+              <input
+                type="password"
+                required
+                placeholder="••••"
+                maxLength={6}
+                value={pinInput}
+                onChange={(e) => setPINInput(e.target.value.replace(/\D/g, ''))}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-amber-500 font-mono tracking-widest"
+              />
+            </div>
+
+            {loginError && (
+              <p className="text-xs text-rose-500 font-semibold bg-rose-500/10 border border-rose-500/20 p-3 rounded-lg flex items-center gap-1.5 animate-pulse">
+                ⚠️ {loginError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loginLoading}
+              className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-bold py-3.5 rounded-xl text-sm transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {loginLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                  <span>Verifying Terminal...</span>
+                </>
+              ) : (
+                'Secure Access Station'
+              )}
+            </button>
+          </form>
+
+          <div className="text-center">
+            <button
+              onClick={() => navigate('/')}
+              className="text-xs text-slate-500 hover:text-slate-300 font-medium transition-colors"
+            >
+              ← Back to Platform Landing
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col">
-      
+
       {/* Top Navigation */}
       <header className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
         <div className="flex items-center gap-4">
-          <button 
-            onClick={() => navigate('/')} 
+          <button
+            onClick={() => navigate('/')}
             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
             title="Return to Launchpad"
           >
@@ -131,17 +356,13 @@ export default function KitchenPanel() {
               <h1 className="text-xl font-bold font-display tracking-tight text-white">Kitchen Display System (KDS)</h1>
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
             </div>
-            <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-400">
-              <span>Selected Store:</span>
-              <select 
-                value={selectedRestId}
-                onChange={(e) => setSelectedRestId(e.target.value)}
-                className="bg-slate-800 border border-slate-700 rounded px-2.5 py-0.5 text-xs font-semibold text-amber-400 focus:outline-none"
-              >
-                {restaurants.map(r => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-              </select>
+            <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-slate-400">
+              <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded border border-slate-700 font-bold uppercase tracking-wider">
+                🏪 {currentRest?.name || 'Loading...'}
+              </span>
+              <span className="bg-slate-800 text-amber-400 px-2.5 py-1 rounded border border-slate-700 font-bold uppercase tracking-wider">
+                🍳 {currentSession?.kitchenName || 'Kitchen'}
+              </span>
             </div>
           </div>
         </div>
@@ -155,26 +376,32 @@ export default function KitchenPanel() {
             </div>
           )}
 
-          <button 
+          <button
             onClick={() => {
               setSoundEnabled(!soundEnabled);
               if (!soundEnabled) triggerChime();
             }}
-            className={`p-2 rounded-lg border text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-              soundEnabled 
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+            className={`p-2 rounded-lg border text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${soundEnabled
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                 : 'bg-slate-800 text-slate-400 border-slate-700'
-            }`}
+              }`}
           >
             {soundEnabled ? <FiVolume2 className="text-base" /> : <FiVolumeX className="text-base" />}
             <span>{soundEnabled ? 'Chime Active' : 'Chime Off'}</span>
+          </button>
+
+          <button
+            onClick={handleLogout}
+            className="p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            Log Out Screen
           </button>
         </div>
       </header>
 
       {/* Main Kanban Content Area */}
       <main className="flex-1 p-6 overflow-x-auto select-none">
-        
+
         {/* Incoming queue banner if pending exist */}
         {pendingOrders.length > 0 && (
           <div className="bg-amber-500 text-slate-950 px-6 py-3 rounded-2xl mb-8 flex justify-between items-center shadow-lg">
@@ -186,7 +413,7 @@ export default function KitchenPanel() {
             </div>
             <div className="flex gap-2">
               {pendingOrders.map(order => (
-                <button 
+                <button
                   key={order.id}
                   onClick={() => handleUpdateStatus(order.id, 'preparing')}
                   className="px-3 py-1 bg-slate-950 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
@@ -199,7 +426,7 @@ export default function KitchenPanel() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-[500px]">
-          
+
           {/* COLUMN 1: PREPARING (UNDER COOKING) */}
           <div className="rounded-2xl bg-slate-900/40 border border-slate-800 p-4 flex flex-col h-full">
             <div className="flex justify-between items-center pb-3 border-b border-slate-800 mb-4">
@@ -215,7 +442,7 @@ export default function KitchenPanel() {
             <div className="space-y-4 flex-1 overflow-y-auto max-h-[600px] pr-1">
               {preparingOrders.map(order => (
                 <div key={order.id} className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-4 shadow hover:border-indigo-500/50 transition-colors animate-fade-in">
-                  
+
                   {/* Card Header details */}
                   <div className="flex justify-between items-start">
                     <div>
@@ -249,7 +476,7 @@ export default function KitchenPanel() {
                   )}
 
                   {/* Actions */}
-                  <button 
+                  <button
                     onClick={() => handleUpdateStatus(order.id, 'ready')}
                     className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
                   >
@@ -282,7 +509,7 @@ export default function KitchenPanel() {
             <div className="space-y-4 flex-1 overflow-y-auto max-h-[600px] pr-1">
               {readyOrders.map(order => (
                 <div key={order.id} className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-4 shadow hover:border-pink-500/50 transition-colors animate-fade-in">
-                  
+
                   {/* Card Header */}
                   <div className="flex justify-between items-start">
                     <div>
@@ -304,7 +531,7 @@ export default function KitchenPanel() {
                     ))}
                   </div>
 
-                  <button 
+                  <button
                     onClick={() => handleUpdateStatus(order.id, 'completed')}
                     className="w-full py-2 bg-pink-600 hover:bg-pink-500 active:bg-pink-700 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
                   >
@@ -337,7 +564,7 @@ export default function KitchenPanel() {
             <div className="space-y-4 flex-1 overflow-y-auto max-h-[600px] pr-1">
               {completedOrders.map(order => (
                 <div key={order.id} className="p-4 rounded-xl bg-slate-900/50 border border-slate-800/80 text-slate-400 space-y-3 animate-fade-in">
-                  
+
                   <div className="flex justify-between items-center">
                     <div>
                       <h4 className="font-bold font-display text-slate-300">{order.tableName || 'Table'}</h4>

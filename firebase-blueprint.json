@@ -5,102 +5,307 @@
       "description": "Details about a subscriber restaurant on the TableTap platform",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "description": { "type": "string" },
-        "logoUrl": { "type": "string" },
-        "themeColor": { "type": "string" },
-        "taxRate": { "type": "number" },
-        "status": { "type": "string", "enum": ["active", "suspended"] },
-        "subscriptionStatus": { "type": "string", "enum": ["active", "expired"] },
-        "subscriptionExpiry": { "type": "string" },
-        "planName": { "type": "string" },
-        "address": { "type": "string" },
-        "contact": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "logoUrl": {
+          "type": "string"
+        },
+        "themeColor": {
+          "type": "string"
+        },
+        "taxRate": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "suspended"
+          ]
+        },
+        "subscriptionStatus": {
+          "type": "string",
+          "enum": [
+            "active",
+            "expired"
+          ]
+        },
+        "subscriptionExpiry": {
+          "type": "string"
+        },
+        "planName": {
+          "type": "string"
+        },
+        "kdsLimit": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "contact": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "name", "themeColor"]
+      "required": [
+        "id",
+        "name",
+        "themeColor"
+      ]
     },
     "Category": {
       "title": "Category",
       "description": "Menu category for products within a restaurant",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "restaurantId": { "type": "string" },
-        "name": { "type": "string" },
-        "order": { "type": "number" },
-        "createdAt": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "restaurantId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "order": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "restaurantId", "name"]
+      "required": [
+        "id",
+        "restaurantId",
+        "name"
+      ]
     },
     "Product": {
       "title": "Product",
       "description": "Food or beverage product sold on the menu",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "restaurantId": { "type": "string" },
-        "categoryId": { "type": "string" },
-        "name": { "type": "string" },
-        "description": { "type": "string" },
-        "price": { "type": "number" },
-        "imageUrl": { "type": "string" },
-        "isAvailable": { "type": "boolean" },
-        "isSpecial": { "type": "boolean" },
-        "isPopular": { "type": "boolean" },
-        "createdAt": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "restaurantId": {
+          "type": "string"
+        },
+        "categoryId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "price": {
+          "type": "number"
+        },
+        "imageUrl": {
+          "type": "string"
+        },
+        "isAvailable": {
+          "type": "boolean"
+        },
+        "isSpecial": {
+          "type": "boolean"
+        },
+        "isPopular": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "restaurantId", "categoryId", "name", "price"]
+      "required": [
+        "id",
+        "restaurantId",
+        "categoryId",
+        "name",
+        "price"
+      ]
     },
     "Table": {
       "title": "Table",
       "description": "Table identification and QR mapping for a restaurant",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "restaurantId": { "type": "string" },
-        "tableName": { "type": "string" },
-        "qrCodeUrl": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "restaurantId": {
+          "type": "string"
+        },
+        "tableName": {
+          "type": "string"
+        },
+        "qrCodeUrl": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "restaurantId", "tableName"]
+      "required": [
+        "id",
+        "restaurantId",
+        "tableName"
+      ]
     },
     "Order": {
       "title": "Order",
       "description": "Table ordering record submitted by a customer",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "restaurantId": { "type": "string" },
-        "tableId": { "type": "string" },
-        "tableName": { "type": "string" },
-        "items": { "type": "array" },
-        "totalAmount": { "type": "number" },
-        "taxAmount": { "type": "number" },
-        "grandTotal": { "type": "number" },
-        "status": { "type": "string", "enum": ["pending", "accepted", "preparing", "ready", "served", "completed", "cancelled"] },
-        "notes": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "restaurantId": {
+          "type": "string"
+        },
+        "tableId": {
+          "type": "string"
+        },
+        "tableName": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array"
+        },
+        "totalAmount": {
+          "type": "number"
+        },
+        "taxAmount": {
+          "type": "number"
+        },
+        "grandTotal": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "accepted",
+            "preparing",
+            "ready",
+            "served",
+            "completed",
+            "cancelled"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "restaurantId", "tableId", "status", "grandTotal"]
+      "required": [
+        "id",
+        "restaurantId",
+        "tableId",
+        "status",
+        "grandTotal"
+      ]
     },
     "Coupon": {
       "title": "Coupon",
       "description": "Discount coupon applicable for cart discounts",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "restaurantId": { "type": "string" },
-        "code": { "type": "string" },
-        "discountType": { "type": "string", "enum": ["percent", "fixed"] },
-        "discountValue": { "type": "number" },
-        "minOrderAmount": { "type": "number" },
-        "expiryDate": { "type": "string" },
-        "isActive": { "type": "boolean" },
-        "createdAt": { "type": "string" }
+        "id": {
+          "type": "string"
+        },
+        "restaurantId": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "discountType": {
+          "type": "string",
+          "enum": [
+            "percent",
+            "fixed"
+          ]
+        },
+        "discountValue": {
+          "type": "number"
+        },
+        "minOrderAmount": {
+          "type": "number"
+        },
+        "expiryDate": {
+          "type": "string"
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string"
+        }
       },
-      "required": ["id", "restaurantId", "code", "discountType", "discountValue"]
+      "required": [
+        "id",
+        "restaurantId",
+        "code",
+        "discountType",
+        "discountValue"
+      ]
+    },
+    "KitchenAccess": {
+      "title": "KitchenAccess",
+      "description": "Secure access credentials for a specific kitchen display screen",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "restaurantId": {
+          "type": "string"
+        },
+        "kitchenName": {
+          "type": "string"
+        },
+        "accessKey": {
+          "type": "string"
+        },
+        "pin": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "disabled"
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "lastUsed": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "restaurantId",
+        "kitchenName",
+        "accessKey",
+        "pin",
+        "status"
+      ]
     }
   },
   "firestore": {
@@ -127,6 +332,10 @@
     "/restaurants/{restaurantId}/coupons/{couponId}": {
       "schema": "Coupon",
       "description": "Discounts and coupon codes for a restaurant"
+    },
+    "/restaurants/{restaurantId}/kitchenAccess/{accessId}": {
+      "schema": "KitchenAccess",
+      "description": "Kitchen access configurations for secure KDS logins"
     }
   }
 }

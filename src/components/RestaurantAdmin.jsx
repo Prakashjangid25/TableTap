@@ -23,7 +23,7 @@ import {
   FiEdit2
 } from 'react-icons/fi';
 import { db } from '../firebase';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import QRPrintSystem from './QRPrintSystem.jsx';
 import {
   getRestaurants,
@@ -107,6 +107,141 @@ export default function RestaurantAdmin() {
   // Edit Product System states
   const [editingProdId, setEditingProdId] = useState(null);
   const [adminSuccessToast, setAdminSuccessToast] = useState('');
+
+  // KDS Management System states
+  const [kitchenAccessList, setKitchenAccessList] = useState([]);
+  const [showAddKitchen, setShowAddKitchen] = useState(false);
+  const [newKitchenName, setNewKitchenName] = useState('');
+  const [editingKitchenId, setEditingKitchenId] = useState(null);
+  const [editingKitchenName, setEditingKitchenName] = useState('');
+
+  // Fetch kitchen accesses real-time
+  useEffect(() => {
+    if (!user || !selectedRestId) return;
+    const accessColRef = collection(db, "restaurants", selectedRestId, "kitchenAccess");
+    const unsubscribe = onSnapshot(accessColRef, (snapshot) => {
+      const list = snapshot.docs.map(doc => doc.data());
+      setKitchenAccessList(list);
+    }, (error) => {
+      console.error("Firestore kitchenAccess error", error);
+    });
+    return () => unsubscribe();
+  }, [selectedRestId, user]);
+
+  const getKdsLimitNum = (limit) => {
+    if (!limit || limit === 'Unlimited') return Infinity;
+    const parsed = parseInt(limit, 10);
+    return isNaN(parsed) ? Infinity : parsed;
+  };
+
+  const handleAddKitchenAccess = async (e) => {
+    e.preventDefault();
+    if (!newKitchenName.trim() || !currentRest) return;
+
+    const limitNum = getKdsLimitNum(currentRest.kdsLimit);
+    if (kitchenAccessList.length >= limitNum) {
+      alert(`You have reached your Kitchen Display System (KDS) limit of ${currentRest.kdsLimit || '2'} screens. Please contact support to upgrade your limit.`);
+      return;
+    }
+
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let randKey = '';
+    for (let i = 0; i < 6; i++) {
+      randKey += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const accessKey = `KDS-${randKey}`;
+
+    let pin = '';
+    for (let i = 0; i < 4; i++) {
+      pin += Math.floor(Math.random() * 10);
+    }
+
+    const newId = `kds_${Date.now()}`;
+    const newAccess = {
+      id: newId,
+      restaurantId: currentRest.id,
+      kitchenName: newKitchenName.trim(),
+      accessKey,
+      pin,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      lastUsed: 'Never'
+    };
+
+    try {
+      await setDoc(doc(db, "restaurants", currentRest.id, "kitchenAccess", newId), newAccess);
+      setNewKitchenName('');
+      setShowAddKitchen(false);
+      showToast(`Kitchen "${newAccess.kitchenName}" registered successfully!`);
+    } catch (err) {
+      console.error("Error creating kitchen access", err);
+      alert("Failed to register kitchen: " + err.message);
+    }
+  };
+
+  const handleRegenerateKeys = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to regenerate access credentials for "${name}"? Any active display using these credentials will be logged out.`)) return;
+
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let randKey = '';
+    for (let i = 0; i < 6; i++) {
+      randKey += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const accessKey = `KDS-${randKey}`;
+
+    let pin = '';
+    for (let i = 0; i < 4; i++) {
+      pin += Math.floor(Math.random() * 10);
+    }
+
+    try {
+      await updateDoc(doc(db, "restaurants", currentRest.id, "kitchenAccess", id), {
+        accessKey,
+        pin,
+        lastUsed: 'Never'
+      });
+      showToast(`Credentials regenerated for "${name}"`);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRenameKitchen = async (e) => {
+    e.preventDefault();
+    if (!editingKitchenName.trim() || !editingKitchenId) return;
+    try {
+      await updateDoc(doc(db, "restaurants", currentRest.id, "kitchenAccess", editingKitchenId), {
+        kitchenName: editingKitchenName.trim()
+      });
+      setEditingKitchenId(null);
+      setEditingKitchenName('');
+      showToast("Kitchen renamed successfully!");
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleToggleKitchenStatus = async (id, currentStatus) => {
+    const newStatus = currentStatus === 'active' ? 'disabled' : 'active';
+    try {
+      await updateDoc(doc(db, "restaurants", currentRest.id, "kitchenAccess", id), {
+        status: newStatus
+      });
+      showToast(`Kitchen status updated to "${newStatus}"`);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteKitchenAccess = async (id, name) => {
+    if (!window.confirm(`Are you absolutely sure you want to delete access for "${name}"? This cannot be undone and any active display using this will be logged out.`)) return;
+    try {
+      await deleteDoc(doc(db, "restaurants", currentRest.id, "kitchenAccess", id));
+      showToast(`Kitchen access deleted.`);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // Toast helper function
   const showToast = (message) => {
@@ -591,6 +726,7 @@ export default function RestaurantAdmin() {
               { id: 'tables', label: 'Table QRs', icon: <FiGrid /> },
               { id: 'orders', label: 'Orders', icon: <FiFileText />, badge: pendingOrdersCount },
               { id: 'coupons', label: 'Coupons & Deals', icon: <FiTag /> },
+              { id: 'kds', label: 'KDS Management', icon: <FiPrinter /> },
               { id: 'settings', label: 'Store Settings', icon: <FiSettings /> }
             ].map(tab => (
               <button
@@ -1054,6 +1190,204 @@ export default function RestaurantAdmin() {
               ))}
               {coupons.length === 0 && (
                 <div className={`col-span-full text-center py-10 rounded-2xl border border-dashed ${isDark ? 'border-slate-700 text-slate-500' : 'border-slate-300 text-slate-400'}`}>No promo coupons available yet.</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── TAB KDS: KDS MANAGEMENT ─────────── */}
+        {activeTab === 'kds' && currentRest && (
+          <div className="animate-fade-in space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h1 className={`text-3xl font-bold font-display tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>KDS Management</h1>
+                <p className={`text-sm mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Manage secure access credentials for individual Kitchen Display Screens.</p>
+              </div>
+              <button
+                onClick={() => {
+                  if (kitchenAccessList.length >= getKdsLimitNum(currentRest.kdsLimit)) {
+                    alert(`You have reached your KDS Limit of ${currentRest.kdsLimit || '2'} screens. Please contact support to upgrade your limit.`);
+                    return;
+                  }
+                  setShowAddKitchen(!showAddKitchen);
+                  setEditingKitchenId(null);
+                }}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-md flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+              >
+                <FiPlus /> New Kitchen Screen
+              </button>
+            </div>
+
+            {/* Limits Card */}
+            <div className={`p-6 rounded-2xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <div className="flex justify-between items-center mb-2 text-sm font-semibold">
+                <span className={isDark ? 'text-slate-400' : 'text-slate-600'}>Active Screens Allocation</span>
+                <span className={isDark ? 'text-emerald-400' : 'text-emerald-600'}>
+                  {kitchenAccessList.length} of {currentRest.kdsLimit || '2'} Screens Used
+                </span>
+              </div>
+              <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 transition-all duration-500"
+                  style={{
+                    width: `${Math.min(100, (kitchenAccessList.length / (getKdsLimitNum(currentRest.kdsLimit) === Infinity ? 10 : getKdsLimitNum(currentRest.kdsLimit))) * 100)}%`
+                  }}
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 mt-2">
+                Your subscription plan limits you to a maximum of {currentRest.kdsLimit || '2'} concurrent kitchen displays. Need more screens? Contact the platform administrator.
+              </p>
+            </div>
+
+            {/* Add Kitchen Form */}
+            {showAddKitchen && (
+              <form onSubmit={handleAddKitchenAccess} className={`p-6 rounded-2xl border shadow-xl max-w-md animate-fade-in space-y-4 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <h3 className={`font-bold text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>Add Kitchen Display Screen</h3>
+                <div>
+                  <label className={labelCls}>Kitchen Screen Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Main Kitchen, Bar, Bakery"
+                    value={newKitchenName}
+                    onChange={(e) => setNewKitchenName(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+                <div className="flex gap-2 justify-end pt-2">
+                  <button type="button" onClick={() => setShowAddKitchen(false)} className={`px-4 py-2 rounded-lg text-xs font-semibold ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>Cancel</button>
+                  <button type="submit" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg text-xs font-bold text-slate-950">Register Screen</button>
+                </div>
+              </form>
+            )}
+
+            {/* Edit/Rename Kitchen Form */}
+            {editingKitchenId && (
+              <form onSubmit={handleRenameKitchen} className={`p-6 rounded-2xl border shadow-xl max-w-md animate-fade-in space-y-4 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <h3 className={`font-bold text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>Rename Kitchen Screen</h3>
+                <div>
+                  <label className={labelCls}>Kitchen Screen Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Desserts"
+                    value={editingKitchenName}
+                    onChange={(e) => setEditingKitchenName(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+                <div className="flex gap-2 justify-end pt-2">
+                  <button type="button" onClick={() => { setEditingKitchenId(null); setEditingKitchenName(''); }} className={`px-4 py-2 rounded-lg text-xs font-semibold ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>Cancel</button>
+                  <button type="submit" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg text-xs font-bold text-slate-950">Save Rename</button>
+                </div>
+              </form>
+            )}
+
+            {/* Kitchen Displays Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {kitchenAccessList.map(item => (
+                <div key={item.id} className={`p-6 rounded-2xl border shadow-sm flex flex-col justify-between gap-4 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                  <div>
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className={`font-bold text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{item.kitchenName}</h3>
+                      <span className={`inline-flex items-center text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase tracking-wider ${item.status === 'active'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        }`}>
+                        {item.status}
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 mt-4">
+                      {/* Access Key */}
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Access Key</span>
+                        <div className={`flex items-center justify-between p-2 rounded-lg font-mono text-xs ${isDark ? 'bg-slate-950 border-slate-800 text-amber-400' : 'bg-slate-50 border-slate-200 text-slate-800'} border`}>
+                          <span>{item.accessKey}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(item.accessKey);
+                              showToast("Access Key copied to clipboard!");
+                            }}
+                            className="text-[10px] font-bold text-amber-500 hover:underline px-1.5"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* PIN */}
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Kitchen PIN</span>
+                        <div className={`flex items-center justify-between p-2 rounded-lg font-mono text-xs ${isDark ? 'bg-slate-950 border-slate-800 text-amber-400' : 'bg-slate-50 border-slate-200 text-slate-800'} border`}>
+                          <span>{item.pin}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(item.pin);
+                              showToast("PIN copied to clipboard!");
+                            }}
+                            className="text-[10px] font-bold text-amber-500 hover:underline px-1.5"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="text-[10px] text-slate-500 pt-1 flex justify-between">
+                        <span>Created: {new Date(item.createdAt).toLocaleDateString()}</span>
+                        <span>Last Active: {item.lastUsed === 'Never' ? 'Never' : new Date(item.lastUsed).toLocaleTimeString()}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-4 border-t border-slate-800/20">
+                    <button
+                      onClick={() => {
+                        setEditingKitchenId(item.id);
+                        setEditingKitchenName(item.kitchenName);
+                        setShowAddKitchen(false);
+                      }}
+                      className={`px-2.5 py-1.5 text-xs rounded-lg font-medium flex-1 text-center border ${isDark
+                          ? 'border-slate-800 text-slate-300 hover:bg-slate-800'
+                          : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                    >
+                      Rename
+                    </button>
+                    <button
+                      onClick={() => handleToggleKitchenStatus(item.id, item.status)}
+                      className={`px-2.5 py-1.5 text-xs rounded-lg font-medium flex-1 text-center border ${item.status === 'active'
+                          ? 'border-amber-500/20 text-amber-400 bg-amber-500/5 hover:bg-amber-500/10'
+                          : 'border-emerald-500/20 text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10'
+                        }`}
+                    >
+                      {item.status === 'active' ? 'Disable' : 'Enable'}
+                    </button>
+                    <button
+                      onClick={() => handleRegenerateKeys(item.id, item.kitchenName)}
+                      title="Regenerate access codes"
+                      className={`p-1.5 text-xs rounded-lg font-medium border ${isDark
+                          ? 'border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                          : 'border-slate-200 text-slate-500 hover:bg-slate-100'
+                        }`}
+                    >
+                      Regen
+                    </button>
+                    <button
+                      onClick={() => handleDeleteKitchenAccess(item.id, item.kitchenName)}
+                      className="p-1.5 text-xs rounded-lg text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20"
+                    >
+                      <FiTrash2 />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {kitchenAccessList.length === 0 && (
+                <div className={`col-span-full text-center py-10 rounded-2xl border border-dashed ${isDark ? 'border-slate-700 text-slate-500' : 'border-slate-300 text-slate-400'}`}>
+                  No kitchen displays registered yet. Click "New Kitchen Screen" to generate secure credentials.
+                </div>
               )}
             </div>
           </div>

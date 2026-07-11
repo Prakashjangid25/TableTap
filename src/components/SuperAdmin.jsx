@@ -81,6 +81,7 @@ export default function SuperAdmin() {
     themeColor: '#10b981',
     taxRate: 8,
     planId: '',
+    kdsLimit: '2',
     address: '',
     contact: ''
   });
@@ -243,7 +244,7 @@ export default function SuperAdmin() {
   };
 
   const resetRestaurantForm = () => {
-    setNewRest({ id: '', name: '', description: '', logoUrl: '', themeColor: '#10b981', taxRate: 8, planId: '', address: '', contact: '' });
+    setNewRest({ id: '', name: '', description: '', logoUrl: '', themeColor: '#10b981', taxRate: 8, planId: '', kdsLimit: '2', address: '', contact: '' });
     setAdminEmail('');
     setAdminPassword('');
     setAdminMobile('');
@@ -605,6 +606,7 @@ export default function SuperAdmin() {
                         <th className="px-6 py-3.5">Store Details</th>
                         <th className="px-6 py-3.5">Pricing Plan</th>
                         <th className="px-6 py-3.5">Assign Plan</th>
+                        <th className="px-6 py-3.5">KDS Limit</th>
                         <th className="px-6 py-3.5">Expiry Date</th>
                         <th className="px-6 py-3.5">Status</th>
                         <th className="px-6 py-3.5">Subscription</th>
@@ -640,6 +642,9 @@ export default function SuperAdmin() {
                                   <option key={p.id} value={p.id}>{p.name} — ₹{p.monthlyPrice}/mo</option>
                                 ))}
                               </select>
+                            </td>
+                            <td className="px-6 py-4 font-mono text-xs font-semibold">
+                              {rest.kdsLimit || 'Unlimited'}
                             </td>
                             <td className={`px-6 py-4 font-mono text-xs ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{rest.subscriptionExpiry}</td>
                             <td className="px-6 py-4">
@@ -815,7 +820,7 @@ export default function SuperAdmin() {
                 <input type="text" placeholder="Authentic Indian street food and chaat..." value={newRest.description} onChange={(e) => setNewRest({ ...newRest, description: e.target.value })} className={`w-full ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'} border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-emerald-500`} />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <div>
                   <label className={labelCls}>Theme Color</label>
                   <input type="color" value={newRest.themeColor} onChange={(e) => setNewRest({ ...newRest, themeColor: e.target.value })} className={`w-full ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'} border rounded-xl h-9 px-1 py-1 focus:outline-none cursor-pointer`} />
@@ -831,6 +836,16 @@ export default function SuperAdmin() {
                     {plans.filter(p => p.isActive).map(p => (
                       <option key={p.id} value={p.id}>{p.name} — ₹{p.monthlyPrice}/mo</option>
                     ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>KDS Limit</label>
+                  <select value={newRest.kdsLimit} onChange={(e) => setNewRest({ ...newRest, kdsLimit: e.target.value })} className={`w-full ${isDark ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-700'} border rounded-xl px-2 py-2 text-xs focus:outline-none focus:border-emerald-500`}>
+                    <option value="1">1 Kitchen</option>
+                    <option value="2">2 Kitchens</option>
+                    <option value="3">3 Kitchens</option>
+                    <option value="5">5 Kitchens</option>
+                    <option value="Unlimited">Unlimited</option>
                   </select>
                 </div>
               </div>

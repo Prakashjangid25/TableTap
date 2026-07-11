@@ -149,7 +149,7 @@ export default function Onboarding() {
 
           {/* Kitchen Screen */}
           <div
-            onClick={() => navigate(`/kitchen?r=${selectedRest}`)}
+            onClick={() => navigate('/kitchen')}
             className={`group cursor-pointer p-6 rounded-2xl ${isDark ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800/80' : 'bg-white border-slate-200 hover:bg-slate-50'} hover:border-sky-500/40 border transition-all duration-300 shadow-xl flex flex-col justify-between`}
           >
             <div>
