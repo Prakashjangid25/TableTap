@@ -19,7 +19,8 @@ import {
   FiCheck,
   FiSun,
   FiMoon,
-  FiX
+  FiX,
+  FiEdit2
 } from 'react-icons/fi';
 import { db } from '../firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
@@ -102,6 +103,18 @@ export default function RestaurantAdmin() {
   });
 
   const [settingsStatus, setSettingsStatus] = useState('');
+
+  // Edit Product System states
+  const [editingProdId, setEditingProdId] = useState(null);
+  const [adminSuccessToast, setAdminSuccessToast] = useState('');
+
+  // Toast helper function
+  const showToast = (message) => {
+    setAdminSuccessToast(message);
+    setTimeout(() => {
+      setAdminSuccessToast('');
+    }, 4000);
+  };
 
   // When user is authenticated as restaurant_admin, load their restaurantId from auth context
   useEffect(() => {
@@ -303,12 +316,57 @@ export default function RestaurantAdmin() {
   const handleAddProduct = async (e) => {
     e.preventDefault();
     if (!newProd.name || !newProd.price || !currentRest) return;
-    await createProduct(currentRest.id, {
-      ...newProd, id: `prod_${Date.now()}`, restaurantId: currentRest.id, price: Number(newProd.price)
-    });
+
+    try {
+      if (editingProdId) {
+        // Edit Mode: Update existing Firestore product document
+        await updateProduct(currentRest.id, editingProdId, {
+          name: newProd.name,
+          price: Number(newProd.price),
+          categoryId: newProd.categoryId,
+          imageUrl: newProd.imageUrl,
+          description: newProd.description,
+          isPopular: newProd.isPopular,
+          isSpecial: newProd.isSpecial,
+          isAvailable: newProd.isAvailable
+        });
+        showToast("Food item updated successfully.");
+        setEditingProdId(null);
+      } else {
+        // Add Mode: Create new product document
+        await createProduct(currentRest.id, {
+          ...newProd, id: `prod_${Date.now()}`, restaurantId: currentRest.id, price: Number(newProd.price)
+        });
+        showToast("Food item published successfully.");
+      }
+    } catch (err) {
+      console.error("Error saving product:", err);
+    }
+
     setShowAddProduct(false);
     setNewProd({ name: '', description: '', price: '', categoryId: '', imageUrl: '', isAvailable: true, isPopular: false, isSpecial: false });
     refreshCollections();
+  };
+
+  const handleEditProductClick = (prod) => {
+    setEditingProdId(prod.id);
+    setNewProd({
+      name: prod.name || '',
+      price: prod.price !== undefined ? String(prod.price) : '',
+      categoryId: prod.categoryId || '',
+      imageUrl: prod.imageUrl || '',
+      description: prod.description || '',
+      isAvailable: prod.isAvailable !== undefined ? prod.isAvailable : true,
+      isPopular: !!prod.isPopular,
+      isSpecial: !!prod.isSpecial
+    });
+    setShowAddProduct(true);
+  };
+
+  const handleCancelProductForm = () => {
+    setShowAddProduct(false);
+    setEditingProdId(null);
+    setNewProd({ name: '', description: '', price: '', categoryId: '', imageUrl: '', isAvailable: true, isPopular: false, isSpecial: false });
   };
 
   const handleToggleProductAvailability = async (id, currentVal) => {
@@ -698,14 +756,21 @@ export default function RestaurantAdmin() {
                 <h1 className={`text-3xl font-bold font-display tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>Menu Products</h1>
                 <p className={`text-sm mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Publish, unpublish, and update descriptions, badges, and prices for your menu.</p>
               </div>
-              <button onClick={() => setShowAddProduct(!showAddProduct)} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-md flex items-center gap-1.5 cursor-pointer">
+              <button onClick={() => {
+                if (!showAddProduct) {
+                  handleCancelProductForm();
+                  setShowAddProduct(true);
+                } else {
+                  setShowAddProduct(false);
+                }
+              }} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-md flex items-center gap-1.5 cursor-pointer">
                 <FiPlus /> Add Food Item
               </button>
             </div>
 
             {showAddProduct && (
               <form onSubmit={handleAddProduct} className={`p-6 rounded-2xl border shadow-xl max-w-lg animate-fade-in space-y-4 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-                <h3 className={`font-bold text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>Add Menu Product</h3>
+                <h3 className={`font-bold text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{editingProdId ? 'Edit Food Item' : 'Add Menu Product'}</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className={labelCls}>Product Name</label>
@@ -744,8 +809,8 @@ export default function RestaurantAdmin() {
                   </label>
                 </div>
                 <div className="flex gap-2 justify-end pt-4">
-                  <button type="button" onClick={() => setShowAddProduct(false)} className={`px-4 py-2 rounded-lg text-xs font-semibold ${isDark ? 'bg-slate-800 text-slate-400 hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-500'}`}>Cancel</button>
-                  <button type="submit" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg text-xs font-bold text-slate-950">Publish Product</button>
+                  <button type="button" onClick={handleCancelProductForm} className={`px-4 py-2 rounded-lg text-xs font-semibold ${isDark ? 'bg-slate-800 text-slate-400 hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-500'}`}>Cancel</button>
+                  <button type="submit" className="px-4 py-2 bg-amber-500 hover:bg-amber-600 rounded-lg text-xs font-bold text-slate-950">{editingProdId ? 'Save Changes' : 'Publish Product'}</button>
                 </div>
               </form>
             )}
@@ -777,7 +842,12 @@ export default function RestaurantAdmin() {
                         <span className={`text-xs font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Available</span>
                         <input type="checkbox" checked={prod.isAvailable} onChange={() => handleToggleProductAvailability(prod.id, prod.isAvailable)} className="cursor-pointer" />
                       </div>
-                      <button onClick={() => handleDeleteProduct(prod.id)} className="p-1 text-rose-500 hover:text-rose-600 transition-colors"><FiTrash2 /></button>
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => handleEditProductClick(prod)} className={`p-1 transition-colors ${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`} title="Edit Food Item">
+                          <FiEdit2 />
+                        </button>
+                        <button onClick={() => handleDeleteProduct(prod.id)} className="p-1 text-rose-500 hover:text-rose-600 transition-colors" title="Delete Food Item"><FiTrash2 /></button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -1060,6 +1130,24 @@ export default function RestaurantAdmin() {
           </div>
           <button
             onClick={handleCloseNotification}
+            className="p-1 rounded-lg hover:bg-white/10 active:bg-white/20 text-white transition-colors cursor-pointer"
+          >
+            <FiX className="text-base" />
+          </button>
+        </div>
+      )}
+
+      {/* Admin Action Success Toast */}
+      {adminSuccessToast && (
+        <div className="fixed bottom-4 right-4 z-50 w-full max-w-sm p-4 bg-[#16a34a] text-white rounded-2xl shadow-xl border border-emerald-500/30 flex items-center gap-3 select-none animate-slide-in-right">
+          <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center font-bold text-lg text-white shrink-0">
+            ✓
+          </div>
+          <div className="flex-1 text-sm font-semibold">
+            {adminSuccessToast}
+          </div>
+          <button
+            onClick={() => setAdminSuccessToast('')}
             className="p-1 rounded-lg hover:bg-white/10 active:bg-white/20 text-white transition-colors cursor-pointer"
           >
             <FiX className="text-base" />
