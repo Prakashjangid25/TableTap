@@ -13,6 +13,7 @@ import {
   FiAlertTriangle,
   FiGrid
 } from 'react-icons/fi';
+import { ReusableBillPreviewModal } from './BillingSystem';
 import { db } from '../firebase';
 import {
   collection,
@@ -94,7 +95,7 @@ const renderChairs = (capacity, isOccupied) => {
   ));
 };
 
-export default function FloorMapManager({ restaurantId, physicalTables, orders }) {
+export default function FloorMapManager({ restaurantId, physicalTables, orders, currentRest }) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -104,6 +105,11 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders }
   const [floors, setFloors] = useState([]);
   const [activeFloorId, setActiveFloorId] = useState('');
   const [floorTables, setFloorTables] = useState([]);
+
+  // Bill Modal states
+  const [isBillModalOpen, setIsBillModalOpen] = useState(false);
+  const [billInitialItems, setBillInitialItems] = useState([]);
+  const [billTableNo, setBillTableNo] = useState('');
 
   // Table Details Popup & Drag/Click Detection
   const [selectedTableForPopup, setSelectedTableForPopup] = useState(null);
@@ -971,6 +977,47 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders }
                   </div>
                 </div>
 
+                {/* Generate Bill Button */}
+                {isOccupied && (
+                  <button
+                    onClick={() => {
+                      // Gather all active orders for this table
+                      const activeOrders = orders.filter(o =>
+                        o.tableId === tbl.id &&
+                        ['pending', 'accepted', 'preparing', 'ready', 'served'].includes(o.status)
+                      );
+
+                      // Aggregate items by name or id
+                      const aggregatedItems = [];
+                      activeOrders.forEach(order => {
+                        order.items?.forEach(item => {
+                          const existing = aggregatedItems.find(it => it.name === item.name || it.id === item.id);
+                          if (existing) {
+                            existing.quantity += Number(item.quantity || 1);
+                            existing.subtotal += Number(item.price || 0) * Number(item.quantity || 1);
+                          } else {
+                            aggregatedItems.push({
+                              id: item.id || item.productId || Math.random().toString(),
+                              name: item.name,
+                              price: Number(item.price || 0),
+                              quantity: Number(item.quantity || 1),
+                              subtotal: Number(item.price || 0) * Number(item.quantity || 1)
+                            });
+                          }
+                        });
+                      });
+
+                      setBillInitialItems(aggregatedItems);
+                      setBillTableNo(tbl.tableName || tbl.tableNo || '');
+                      setIsBillModalOpen(true);
+                      setSelectedTableForPopup(null);
+                    }}
+                    className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/10 hover:shadow-xl hover:scale-[1.01] cursor-pointer mb-2.5"
+                  >
+                    <FiDollarSign className="stroke-[3px] text-lg" /> Generate Bill
+                  </button>
+                )}
+
                 {/* Mark Available Button */}
                 {isOccupied && (
                   <button
@@ -990,6 +1037,18 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders }
           </div>
         );
       })()}
+
+      <ReusableBillPreviewModal
+        isOpen={isBillModalOpen}
+        onClose={() => setIsBillModalOpen(false)}
+        initialItems={billInitialItems}
+        tableNumber={billTableNo}
+        currentRest={currentRest}
+        isDark={isDark}
+        tables={physicalTables}
+        orders={orders}
+        onShowStatus={showStatus}
+      />
     </div>
   );
 }

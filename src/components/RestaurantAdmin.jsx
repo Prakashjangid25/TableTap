@@ -25,9 +25,11 @@ import {
   FiMap,
   FiCalendar,
   FiChevronDown,
-  FiDownload
+  FiDownload,
+  FiDollarSign
 } from 'react-icons/fi';
 import FloorMapManager from './FloorMapManager.jsx';
+import BillingSystem from './BillingSystem.jsx';
 import { db } from '../firebase';
 import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import QRPrintSystem from './QRPrintSystem.jsx';
@@ -901,7 +903,8 @@ export default function RestaurantAdmin() {
     await updateRestaurant(currentRest.id, {
       name: currentRest.name, description: currentRest.description,
       logoUrl: currentRest.logoUrl, themeColor: currentRest.themeColor,
-      taxRate: Number(currentRest.taxRate), address: currentRest.address, contact: currentRest.contact
+      taxRate: Number(currentRest.taxRate), address: currentRest.address, contact: currentRest.contact,
+      showPoweredBy: currentRest.showPoweredBy ?? false
     });
     setSettingsStatus('Settings updated successfully!');
     setTimeout(() => setSettingsStatus(''), 3000);
@@ -1098,6 +1101,7 @@ export default function RestaurantAdmin() {
               { id: 'tables', label: 'Table QRs', icon: <FiGrid /> },
               { id: 'floormap', label: 'Floor Map', icon: <FiMap /> },
               { id: 'orders', label: 'Orders', icon: <FiFileText />, badge: pendingOrdersCount },
+              { id: 'billing', label: 'Billing System', icon: <FiDollarSign /> },
               { id: 'coupons', label: 'Coupons & Deals', icon: <FiTag /> },
               { id: 'kds', label: 'KDS Management', icon: <FiPrinter /> },
               { id: 'settings', label: 'Store Settings', icon: <FiSettings /> }
@@ -1957,6 +1961,21 @@ export default function RestaurantAdmin() {
             restaurantId={currentRest.id}
             physicalTables={tables}
             orders={orders}
+            currentRest={currentRest}
+          />
+        )}
+
+        {/* ── TAB BILLING: BILLING SYSTEM ──────── */}
+        {activeTab === 'billing' && currentRest && (
+          <BillingSystem
+            restaurantId={currentRest.id}
+            products={products}
+            categories={categories}
+            tables={tables}
+            orders={orders}
+            currentRest={currentRest}
+            isDark={isDark}
+            onShowStatus={showToast}
           />
         )}
 
@@ -2006,6 +2025,45 @@ export default function RestaurantAdmin() {
                   <input type="text" value={currentRest.contact || ''} onChange={(e) => setCurrentRest({ ...currentRest, contact: e.target.value })} className={inputCls} />
                 </div>
               </div>
+
+              {/* Billing Settings Section */}
+              <div className={`pt-6 border-t ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
+                <h3 className={`text-base font-bold tracking-tight mb-4 ${isDark ? 'text-white' : 'text-slate-900'}`}>Billing Settings</h3>
+
+                {/* Receipt Branding Subsection */}
+                <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50 border-slate-150'}`}>
+                  <h4 className={`text-xs font-bold tracking-wider uppercase mb-3 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Receipt Branding</h4>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className={`text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Show: "Powered by EasyDine"</p>
+                      <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'} mt-0.5`}>Display a minimal, elegant footer branding at the bottom of printed receipts and exported PDFs.</p>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs font-black tracking-wider ${currentRest.showPoweredBy ? 'text-amber-500' : isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                        {currentRest.showPoweredBy ? 'ON' : 'OFF'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCurrentRest({
+                            ...currentRest,
+                            showPoweredBy: !currentRest.showPoweredBy
+                          });
+                        }}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${currentRest.showPoweredBy ? 'bg-amber-500' : isDark ? 'bg-slate-700' : 'bg-slate-200'
+                          }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${currentRest.showPoweredBy ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className={`pt-4 border-t flex items-center justify-between ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
                 <button type="submit" className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all shadow cursor-pointer">
                   Save Store Settings
