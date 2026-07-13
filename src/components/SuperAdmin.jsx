@@ -35,7 +35,7 @@ import {
   updateSubscriptionPlan,
   deleteSubscriptionPlan
 } from '../dbService';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './AuthProvider.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
@@ -105,6 +105,17 @@ export default function SuperAdmin() {
     isActive: true
   });
   const [planError, setPlanError] = useState('');
+
+  // Password Reset Feature States
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+  const [selectedRestForReset, setSelectedRestForReset] = useState(null);
+  const [resetOption, setResetOption] = useState('auto'); // 'auto' or 'manual'
+  const [manualPasswordInput, setManualPasswordInput] = useState('');
+  const [generatedPassword, setGeneratedPassword] = useState('');
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const [copySuccess, setCopySuccess] = useState(false);
 
   // Platform Settings
   const [commissionRate, setCommissionRate] = useState(2.5);
@@ -252,6 +263,78 @@ export default function SuperAdmin() {
   };
 
   // ── Restaurant Actions ────────────────────────
+  const handleResetPasswordClick = (restaurant) => {
+    setSelectedRestForReset(restaurant);
+    setResetOption('auto');
+    setManualPasswordInput('');
+    setResetError('');
+    setResetSuccess(false);
+    setCopySuccess(false);
+    setIsResetPasswordOpen(true);
+  };
+
+  const handleResetPasswordSubmit = async (e) => {
+    e.preventDefault();
+    setResetError('');
+    setIsResetting(true);
+
+    let tempPassword = '';
+    if (resetOption === 'auto') {
+      const prefixes = ['ED', 'Cafe', 'Easy', 'Tap', 'Dine', 'Table', 'Chef', 'Food'];
+      const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+      const digits = Math.floor(10000 + Math.random() * 90000); // 5 digits
+      tempPassword = `${prefix}@${digits}`;
+    } else {
+      if (!manualPasswordInput.trim()) {
+        setResetError('Please enter a temporary password.');
+        setIsResetting(false);
+        return;
+      }
+      if (manualPasswordInput.length < 6) {
+        setResetError('Manual password must be at least 6 characters long.');
+        setIsResetting(false);
+        return;
+      }
+      tempPassword = manualPasswordInput.trim();
+    }
+
+    try {
+      // 1. Query users collection to find the restaurant_admin
+      const usersRef = collection(db, 'users');
+      const q = query(
+        usersRef,
+        where('restaurantId', '==', selectedRestForReset.id),
+        where('role', '==', 'restaurant_admin')
+      );
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        throw new Error('No administrator user account found for this restaurant.');
+      }
+
+      // 2. Update password in user doc
+      const userDocRef = querySnapshot.docs[0].ref;
+      await updateDoc(userDocRef, {
+        password: tempPassword
+      });
+
+      // 3. Update metadata in restaurant doc
+      const restDocRef = doc(db, 'restaurants', selectedRestForReset.id);
+      await updateDoc(restDocRef, {
+        lastPasswordResetAt: new Date().toISOString(),
+        usesTemporaryPassword: true
+      });
+
+      setGeneratedPassword(tempPassword);
+      setResetSuccess(true);
+    } catch (err) {
+      console.error('Error resetting password:', err);
+      setResetError(err.message || 'Failed to reset password.');
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   const [suspendModal, setSuspendModal] = useState({ isOpen: false, id: '', currentStatus: '' });
 
   const handleSuspendClick = (id, currentStatus) => {
@@ -676,6 +759,9 @@ export default function SuperAdmin() {
                                 <button onClick={() => handleRenew(rest.id)} className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 transition-all font-medium border border-emerald-500/20 cursor-pointer">
                                   Renew
                                 </button>
+                                <button onClick={() => handleResetPasswordClick(rest)} className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-xs text-amber-500 hover:text-amber-400 transition-all font-medium border border-amber-500/20 cursor-pointer">
+                                  Reset Password
+                                </button>
                                 <button onClick={() => handleDelete(rest.id)} className="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-xs text-rose-400 transition-all font-medium border border-rose-500/20 cursor-pointer">
                                   <FiTrash2 />
                                 </button>
@@ -999,6 +1085,146 @@ export default function SuperAdmin() {
                 Suspend
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {isResetPasswordOpen && selectedRestForReset && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border transition-all ${isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-150 text-slate-900'
+            }`}>
+            {!resetSuccess ? (
+              <>
+                <h3 className={`text-lg font-bold font-display tracking-tight mb-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  Reset Restaurant Password
+                </h3>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'} mb-4 leading-relaxed`}>
+                  This will replace the restaurant's current password with a temporary password. The restaurant owner should log in using this temporary password and immediately create a new password from Account Settings.
+                </p>
+
+                <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">Password Option</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setResetOption('auto')}
+                        className={`p-3 rounded-xl border text-xs font-bold text-center cursor-pointer transition-all ${resetOption === 'auto'
+                            ? 'bg-amber-500/10 border-amber-500 text-amber-500'
+                            : isDark ? 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                      >
+                        Auto-Generate
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setResetOption('manual')}
+                        className={`p-3 rounded-xl border text-xs font-bold text-center cursor-pointer transition-all ${resetOption === 'manual'
+                            ? 'bg-amber-500/10 border-amber-500 text-amber-500'
+                            : isDark ? 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                      >
+                        Manual Entry
+                      </button>
+                    </div>
+                  </div>
+
+                  {resetOption === 'manual' && (
+                    <div className="animate-fade-in">
+                      <label className="block text-xs font-semibold uppercase tracking-wider mb-1 text-slate-400">Temporary Password</label>
+                      <input
+                        type="text"
+                        required
+                        value={manualPasswordInput}
+                        onChange={(e) => setManualPasswordInput(e.target.value)}
+                        placeholder="Minimum 6 characters"
+                        className={`w-full px-3.5 py-2 text-sm rounded-xl border focus:outline-none focus:border-amber-500 transition-all ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
+                          }`}
+                      />
+                    </div>
+                  )}
+
+                  {resetError && (
+                    <p className="text-xs text-rose-500 flex items-center gap-1 mt-1">
+                      <FiAlertTriangle /> {resetError}
+                    </p>
+                  )}
+
+                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                      type="button"
+                      disabled={isResetting}
+                      onClick={() => {
+                        setIsResetPasswordOpen(false);
+                        setSelectedRestForReset(null);
+                        setResetError('');
+                      }}
+                      className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                        }`}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isResetting}
+                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs cursor-pointer transition-all shadow-lg"
+                    >
+                      {isResetting ? 'Resetting...' : 'Reset Password'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : (
+              <div className="text-center py-4">
+                <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FiCheckCircle className="text-2xl" />
+                </div>
+                <h3 className={`text-lg font-bold font-display tracking-tight mb-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  Password Reset Successfully
+                </h3>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'} mb-6`}>
+                  Share this temporary password with the restaurant admin so they can secure their account.
+                </p>
+
+                <div className={`p-4 rounded-xl border mb-6 text-center transition-all ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                  <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Temporary Password</p>
+                  <p className="text-lg font-black font-mono tracking-wide text-amber-500 select-all">
+                    {generatedPassword}
+                  </p>
+                </div>
+
+                <div className="flex gap-3 justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedPassword);
+                      setCopySuccess(true);
+                      setTimeout(() => setCopySuccess(false), 2000);
+                    }}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${copySuccess
+                        ? 'bg-emerald-500 text-white'
+                        : isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                      }`}
+                  >
+                    {copySuccess ? 'Copied!' : 'Copy Password'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsResetPasswordOpen(false);
+                      setSelectedRestForReset(null);
+                      setResetSuccess(false);
+                      setGeneratedPassword('');
+                    }}
+                    className="px-6 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs cursor-pointer transition-all shadow-lg"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

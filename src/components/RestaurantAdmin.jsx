@@ -31,7 +31,7 @@ import {
 import FloorMapManager from './FloorMapManager.jsx';
 import BillingSystem from './BillingSystem.jsx';
 import { db } from '../firebase';
-import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
 import QRPrintSystem from './QRPrintSystem.jsx';
 import {
   getRestaurants,
@@ -104,6 +104,16 @@ export default function RestaurantAdmin() {
   const [authError, setAuthError] = useState('');
   const [isSuspended, setIsSuspended] = useState(false);
   const wasActive = React.useRef(false);
+
+  // Password reset/change feature states
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [changePasswordError, setChangePasswordError] = useState('');
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [dismissedRecommendation, setDismissedRecommendation] = useState(false);
 
   // Core collections data
   const [categories, setCategories] = useState([]);
@@ -482,6 +492,72 @@ export default function RestaurantAdmin() {
       if (!authedUser) throw new Error('Login failed. Please try again.');
     } catch (err) {
       setAuthError(err.message || 'Authentication failed. Please check your credentials.');
+    }
+  };
+
+  const handleChangePasswordSubmit = async (e) => {
+    e.preventDefault();
+    setChangePasswordError('');
+    setChangePasswordSuccess(false);
+
+    if (!currentPasswordInput || !newPasswordInput || !confirmPasswordInput) {
+      setChangePasswordError('Please fill in all fields.');
+      return;
+    }
+
+    if (newPasswordInput.length < 6) {
+      setChangePasswordError('New password must be at least 6 characters long.');
+      return;
+    }
+
+    if (newPasswordInput !== confirmPasswordInput) {
+      setChangePasswordError('Confirm password does not match.');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      const emailId = user.email.toLowerCase().trim();
+      const userDocRef = doc(db, 'users', emailId);
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (!userDocSnap.exists()) {
+        throw new Error('User account not found.');
+      }
+
+      const userData = userDocSnap.data();
+      if (userData.password !== currentPasswordInput) {
+        throw new Error('Current password is incorrect.');
+      }
+
+      // Update password in users collection
+      await updateDoc(userDocRef, {
+        password: newPasswordInput
+      });
+
+      // Update restaurant's metadata
+      const restDocRef = doc(db, 'restaurants', currentRest.id);
+      await updateDoc(restDocRef, {
+        usesTemporaryPassword: false,
+        lastPasswordResetAt: new Date().toISOString()
+      });
+
+      setChangePasswordSuccess(true);
+      setCurrentPasswordInput('');
+      setNewPasswordInput('');
+      setConfirmPasswordInput('');
+
+      // Auto close after 2 seconds
+      setTimeout(() => {
+        setIsChangePasswordOpen(false);
+        setChangePasswordSuccess(false);
+      }, 2000);
+
+    } catch (err) {
+      console.error('Error changing password:', err);
+      setChangePasswordError(err.message || 'Failed to update password.');
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -2130,6 +2206,27 @@ export default function RestaurantAdmin() {
                 {settingsStatus && <span className="text-xs font-semibold text-emerald-500 animate-pulse">{settingsStatus}</span>}
               </div>
             </form>
+
+            {/* Account Security Card */}
+            <div className={`p-6 rounded-2xl border shadow-sm space-y-4 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <div>
+                <h3 className={`text-base font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>Account Security</h3>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'} mt-1`}>Manage and update your restaurant administrator login password.</p>
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="space-y-1">
+                  <p className={`text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Change Password</p>
+                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Update your password immediately to secure your admin dashboard.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsChangePasswordOpen(true)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                >
+                  Change Password
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </main>
@@ -2423,6 +2520,135 @@ export default function RestaurantAdmin() {
               </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* Security Recommendation Modal */}
+      {currentRest?.usesTemporaryPassword && !dismissedRecommendation && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border transition-all ${isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}>
+            <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mb-4">
+              <FiAlertTriangle className="text-2xl animate-pulse" />
+            </div>
+            <h3 className={`text-lg font-bold font-display tracking-tight mb-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              Security Recommendation
+            </h3>
+            <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'} mb-6 leading-relaxed`}>
+              You are currently using a temporary password created by the Super Admin. For better security, please create your own password.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDismissedRecommendation(true)}
+                className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+              >
+                Later
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDismissedRecommendation(true);
+                  setIsChangePasswordOpen(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs cursor-pointer transition-all shadow-lg"
+              >
+                Change Password
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Password Dialog */}
+      {isChangePasswordOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border transition-all ${isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}>
+            <h3 className={`text-lg font-bold font-display tracking-tight mb-1 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              Change Password
+            </h3>
+            <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'} mb-4`}>
+              Update your password to keep your dashboard secure.
+            </p>
+
+            <form onSubmit={handleChangePasswordSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider mb-1 text-slate-400">Current Password</label>
+                <input
+                  type="password"
+                  required
+                  value={currentPasswordInput}
+                  onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                  placeholder="Enter current password"
+                  className={inputCls}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider mb-1 text-slate-400">New Password</label>
+                <input
+                  type="password"
+                  required
+                  value={newPasswordInput}
+                  onChange={(e) => setNewPasswordInput(e.target.value)}
+                  placeholder="Minimum 6 characters"
+                  className={inputCls}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider mb-1 text-slate-400">Confirm New Password</label>
+                <input
+                  type="password"
+                  required
+                  value={confirmPasswordInput}
+                  onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                  placeholder="Confirm new password"
+                  className={inputCls}
+                />
+              </div>
+
+              {changePasswordError && (
+                <p className="text-xs text-rose-500 flex items-center gap-1 mt-1">
+                  <FiAlertTriangle /> {changePasswordError}
+                </p>
+              )}
+
+              {changePasswordSuccess && (
+                <p className="text-xs text-emerald-500 flex items-center gap-1 mt-1">
+                  <FiCheckCircle /> Password updated successfully.
+                </p>
+              )}
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  disabled={isChangingPassword}
+                  onClick={() => {
+                    setIsChangePasswordOpen(false);
+                    setCurrentPasswordInput('');
+                    setNewPasswordInput('');
+                    setConfirmPasswordInput('');
+                    setChangePasswordError('');
+                    setChangePasswordSuccess(false);
+                  }}
+                  className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                    }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isChangingPassword}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs cursor-pointer transition-all shadow-lg"
+                >
+                  {isChangingPassword ? 'Updating...' : 'Update Password'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
