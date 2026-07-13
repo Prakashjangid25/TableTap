@@ -1,26 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { 
-  FiSearch, 
-  FiShoppingBag, 
-  FiX, 
-  FiPlus, 
-  FiMinus, 
-  FiTag, 
-  FiClock, 
-  FiCompass, 
-  FiCheckCircle, 
-  FiMapPin, 
+import {
+  FiSearch,
+  FiShoppingBag,
+  FiX,
+  FiPlus,
+  FiMinus,
+  FiTag,
+  FiClock,
+  FiCompass,
+  FiCheckCircle,
+  FiMapPin,
   FiChevronRight,
   FiArrowRight,
   FiMessageSquare,
   FiCheck
 } from 'react-icons/fi';
-import { 
-  getRestaurant, 
-  getCategories, 
-  getProducts, 
-  getCoupons, 
+import {
+  getRestaurant,
+  getCategories,
+  getProducts,
+  getCoupons,
   createOrder,
   getOrders,
   getTables
@@ -36,7 +36,7 @@ export default function CustomerMenu() {
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [coupons, setCoupons] = useState([]);
-  
+
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState([]);
@@ -122,7 +122,7 @@ export default function CustomerMenu() {
     setPromoError('');
     const code = promoCode.toUpperCase().trim();
     const coupon = coupons.find(c => c.code === code && c.isActive);
-    
+
     if (!coupon) {
       setPromoError('Invalid or expired coupon code.');
       setActiveCoupon(null);
@@ -188,8 +188,8 @@ export default function CustomerMenu() {
   const filteredProducts = products.filter(prod => {
     if (!prod.isAvailable) return false;
     const matchesCategory = activeCategory === 'all' || prod.categoryId === activeCategory;
-    const matchesSearch = prod.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          prod.description.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = prod.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      prod.description.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCategory && matchesSearch;
   });
 
@@ -234,6 +234,18 @@ export default function CustomerMenu() {
     );
   }
 
+  if (restaurant.status === 'suspended') {
+    return (
+      <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center justify-center text-center">
+        <div className="p-4 bg-rose-50 rounded-full text-rose-500 text-3xl mb-4"><FiX /></div>
+        <h3 className="text-xl font-bold font-display text-slate-900 mb-2">Service Temporarily Offline</h3>
+        <p className="text-slate-500 text-sm max-w-sm font-light mb-6">
+          This restaurant is temporarily offline. Please contact the staff or administrator for assistance.
+        </p>
+      </div>
+    );
+  }
+
   // RENDER TRACKER STATE
   if (placedOrder) {
     const steps = ['pending', 'accepted', 'preparing', 'ready', 'served', 'completed'];
@@ -263,7 +275,7 @@ export default function CustomerMenu() {
 
         {/* Tracker Progress bar column */}
         <div className="flex-1 p-6 space-y-8 overflow-y-auto">
-          
+
           <div className="flex flex-col relative space-y-8 pl-10 border-l border-slate-200 ml-4 py-2">
             {[
               { id: 'pending', title: 'Order Submitted', desc: 'Awaiting restaurant host verification.' },
@@ -276,7 +288,7 @@ export default function CustomerMenu() {
               const active = placedOrder.status === step.id;
               return (
                 <div key={step.id} className="relative group">
-                  
+
                   {/* Step bubble overlay */}
                   <span className={`absolute left-[-50px] top-0 w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs transition-all duration-300 ${getStepStatusClass(step.id)}`}>
                     {steps.indexOf(step.id) < currentStepIndex ? <FiCheck /> : (steps.indexOf(step.id) + 1)}
@@ -314,11 +326,11 @@ export default function CustomerMenu() {
 
         {/* Order again footer */}
         <div className="p-4 bg-white border-t shrink-0 text-center">
-          <button 
+          <button
             onClick={() => {
               setPlacedOrder(null);
               setCart([]);
-            }} 
+            }}
             className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm rounded-xl shadow transition-colors cursor-pointer"
           >
             Order Something Else
@@ -331,16 +343,16 @@ export default function CustomerMenu() {
   // CUSTOMER MENU SCREEN
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col max-w-md mx-auto relative shadow-2xl overflow-hidden border-x pb-20">
-      
+
       {/* Dynamic Colored header background based on theme */}
-      <header 
-        style={{ backgroundColor: restaurant.themeColor || '#10b981' }} 
+      <header
+        style={{ backgroundColor: restaurant.themeColor || '#10b981' }}
         className="text-white p-6 relative shrink-0"
       >
         <div className="flex gap-4 items-center">
-          <img 
-            src={restaurant.logoUrl} 
-            alt={restaurant.name} 
+          <img
+            src={restaurant.logoUrl}
+            alt={restaurant.name}
             className="w-16 h-16 rounded-2xl object-cover border border-white/20 shadow-lg bg-slate-950"
             onError={(e) => { e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=400" }}
           />
@@ -356,7 +368,7 @@ export default function CustomerMenu() {
 
       {/* Floating Cart Button */}
       {cart.length > 0 && (
-        <button 
+        <button
           onClick={() => setShowCart(true)}
           className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-[360px] bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-bold py-3 px-5 rounded-2xl shadow-2xl flex justify-between items-center z-40 transition-all scale-105"
         >
@@ -372,11 +384,11 @@ export default function CustomerMenu() {
 
       {/* Main categories + listings */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        
+
         {/* Search bar */}
         <div className="relative">
           <FiSearch className="absolute left-4 top-3.5 text-slate-400" />
-          <input 
+          <input
             type="text"
             placeholder="Search delicious culinary specialties..."
             value={searchQuery}
@@ -387,25 +399,23 @@ export default function CustomerMenu() {
 
         {/* Scrolling categories selector */}
         <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
-          <button 
+          <button
             onClick={() => setActiveCategory('all')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-colors cursor-pointer ${
-              activeCategory === 'all' 
-                ? 'bg-slate-900 text-white shadow-sm' 
+            className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-colors cursor-pointer ${activeCategory === 'all'
+                ? 'bg-slate-900 text-white shadow-sm'
                 : 'bg-white text-slate-500 border border-slate-200'
-            }`}
+              }`}
           >
             All Specialties
           </button>
           {categories.map(cat => (
-            <button 
+            <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-colors cursor-pointer ${
-                activeCategory === cat.id 
-                  ? 'bg-slate-900 text-white shadow-sm' 
+              className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-colors cursor-pointer ${activeCategory === cat.id
+                  ? 'bg-slate-900 text-white shadow-sm'
                   : 'bg-white text-slate-500 border border-slate-200'
-              }`}
+                }`}
             >
               {cat.name}
             </button>
@@ -420,15 +430,15 @@ export default function CustomerMenu() {
             </h3>
             <div className="flex gap-4 overflow-x-auto no-scrollbar py-1">
               {popularProducts.map(prod => (
-                <div 
-                  key={prod.id} 
+                <div
+                  key={prod.id}
                   onClick={() => setSelectedProduct(prod)}
                   className="bg-white rounded-2xl border border-slate-200/80 p-3 shadow-sm flex flex-col justify-between shrink-0 w-44 hover:shadow-md transition-shadow cursor-pointer"
                 >
-                  <img 
-                    src={prod.imageUrl} 
-                    alt={prod.name} 
-                    className="w-full h-24 object-cover rounded-xl bg-slate-100" 
+                  <img
+                    src={prod.imageUrl}
+                    alt={prod.name}
+                    className="w-full h-24 object-cover rounded-xl bg-slate-100"
                     onError={(e) => { e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=400" }}
                   />
                   <div className="space-y-1.5 pt-2 flex-1 flex flex-col justify-between">
@@ -439,7 +449,7 @@ export default function CustomerMenu() {
 
                     <div className="pt-2 flex justify-between items-center">
                       <span className="text-[9px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full font-bold">Popular</span>
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           addToCart(prod);
@@ -466,14 +476,14 @@ export default function CustomerMenu() {
             {filteredProducts.map(prod => {
               const qty = getProductQuantity(prod.id);
               return (
-                <div 
+                <div
                   key={prod.id}
                   onClick={() => setSelectedProduct(prod)}
                   className="p-3 bg-white rounded-2xl border border-slate-200/80 hover:border-slate-300 shadow-sm flex gap-4 items-center justify-between transition-all cursor-pointer relative"
                 >
-                  <img 
-                    src={prod.imageUrl} 
-                    alt={prod.name} 
+                  <img
+                    src={prod.imageUrl}
+                    alt={prod.name}
                     className="w-16 h-16 rounded-xl object-cover bg-slate-50 shrink-0 border"
                     onError={(e) => { e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=400" }}
                   />
@@ -496,7 +506,7 @@ export default function CustomerMenu() {
                         <button onClick={() => addToCart(prod)} className="w-6 h-6 rounded-lg bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center cursor-pointer shadow-sm"><FiPlus className="text-xs" /></button>
                       </div>
                     ) : (
-                      <button 
+                      <button
                         onClick={() => addToCart(prod)}
                         className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-black text-white font-bold text-xs shadow-sm cursor-pointer"
                       >
@@ -521,14 +531,14 @@ export default function CustomerMenu() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-t-3xl sm:rounded-2xl overflow-hidden shadow-2xl animate-fade-in text-slate-800">
             <div className="relative h-56 bg-slate-100">
-              <img 
-                src={selectedProduct.imageUrl} 
-                alt={selectedProduct.name} 
-                className="w-full h-full object-cover" 
+              <img
+                src={selectedProduct.imageUrl}
+                alt={selectedProduct.name}
+                className="w-full h-full object-cover"
                 onError={(e) => { e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=400" }}
               />
-              <button 
-                onClick={() => setSelectedProduct(null)} 
+              <button
+                onClick={() => setSelectedProduct(null)}
                 className="absolute top-4 right-4 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur shadow"
               >
                 <FiX />
@@ -548,7 +558,7 @@ export default function CustomerMenu() {
               </div>
 
               <p className="text-xs text-slate-500 leading-relaxed font-light">{selectedProduct.description || 'Artisanal culinary preparation made by master chefs in the house.'}</p>
-              
+
               <div className="pt-3 border-t flex justify-between items-center">
                 <span className="text-xs text-slate-400 font-medium">Configure to Cart</span>
                 <div className="flex items-center gap-2 bg-slate-100 border p-1 rounded-xl">
@@ -566,7 +576,7 @@ export default function CustomerMenu() {
       {showCart && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end justify-center">
           <div className="w-full max-w-md bg-white rounded-t-3xl overflow-hidden shadow-2xl animate-fade-in flex flex-col max-h-[85vh]">
-            
+
             {/* Header */}
             <div className="px-5 py-4 border-b flex justify-between items-center bg-slate-900 text-white shrink-0">
               <div className="flex items-center gap-2">
@@ -578,7 +588,7 @@ export default function CustomerMenu() {
 
             {/* Cart content scrollable */}
             <div className="flex-1 overflow-y-auto p-5 space-y-5">
-              
+
               <div className="space-y-3.5 divide-y divide-slate-100">
                 {cart.map(item => (
                   <div key={item.id} className="flex justify-between items-center py-2 text-xs">
@@ -600,7 +610,7 @@ export default function CustomerMenu() {
                 <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1">
                   <FiMessageSquare /> Special cooking instructions
                 </label>
-                <textarea 
+                <textarea
                   rows="2"
                   placeholder="e.g. No sesame oil, well done burger, extra napkins..."
                   value={specialInstructions}
@@ -613,7 +623,7 @@ export default function CustomerMenu() {
               <form onSubmit={handleApplyPromo} className="space-y-2">
                 <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Apply Store Coupon</label>
                 <div className="flex gap-2">
-                  <input 
+                  <input
                     type="text"
                     placeholder="Enter code e.g. WELCOME10"
                     value={promoCode}
@@ -658,7 +668,7 @@ export default function CustomerMenu() {
 
             {/* Place checkout */}
             <div className="p-4 bg-slate-50 border-t shrink-0">
-              <button 
+              <button
                 onClick={handleCheckout}
                 className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm rounded-xl shadow-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >

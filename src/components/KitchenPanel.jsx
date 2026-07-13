@@ -50,6 +50,16 @@ export default function KitchenPanel() {
         const stored = localStorage.getItem('kds_session');
         if (stored) {
           const session = JSON.parse(stored);
+
+          // Verify restaurant is not suspended
+          const restDocSnap = await getDoc(doc(db, "restaurants", session.restaurantId));
+          if (restDocSnap.exists() && restDocSnap.data().status === 'suspended') {
+            localStorage.removeItem('kds_session');
+            setIsAuthenticated(false);
+            setSessionChecking(false);
+            return;
+          }
+
           const docRef = doc(db, "restaurants", session.restaurantId, "kitchenAccess", session.kitchenAccessId);
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
@@ -97,9 +107,15 @@ export default function KitchenPanel() {
     async function fetchOrders() {
       if (!selectedRestId || !isAuthenticated) return;
 
-      // Verify active session status
+      // Verify active session status & restaurant status
       try {
         if (currentSession) {
+          const restDocSnap = await getDoc(doc(db, "restaurants", currentSession.restaurantId));
+          if (restDocSnap.exists() && restDocSnap.data().status === 'suspended') {
+            handleLogout();
+            return;
+          }
+
           const docRef = doc(db, "restaurants", currentSession.restaurantId, "kitchenAccess", currentSession.kitchenAccessId);
           const docSnap = await getDoc(docRef);
           if (!docSnap.exists() || docSnap.data().status !== 'active' || docSnap.data().accessKey !== currentSession.accessKey || docSnap.data().pin !== currentSession.pin) {
@@ -210,6 +226,12 @@ export default function KitchenPanel() {
 
       if (!matchedAccess) {
         setLoginError("Invalid Kitchen Access Key or PIN. Please check and try again.");
+        setLoginLoading(false);
+        return;
+      }
+
+      if (matchedRestaurant && matchedRestaurant.status === 'suspended') {
+        setLoginError("This restaurant's subscription has been suspended by the administrator.");
         setLoginLoading(false);
         return;
       }

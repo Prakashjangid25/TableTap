@@ -252,12 +252,23 @@ export default function SuperAdmin() {
   };
 
   // ── Restaurant Actions ────────────────────────
+  const [suspendModal, setSuspendModal] = useState({ isOpen: false, id: '', currentStatus: '' });
+
+  const handleSuspendClick = (id, currentStatus) => {
+    if (currentStatus === 'active') {
+      setSuspendModal({ isOpen: true, id, currentStatus });
+    } else {
+      handleSuspend(id, currentStatus);
+    }
+  };
+
   const handleSuspend = async (id, currentStatus) => {
     const nextStatus = currentStatus === 'active' ? 'suspended' : 'active';
     setLoading(true);
     await updateRestaurant(id, { status: nextStatus });
     await reloadData();
     setLoading(false);
+    setSuspendModal({ isOpen: false, id: '', currentStatus: '' });
   };
 
   const handleRenew = async (id) => {
@@ -265,7 +276,7 @@ export default function SuperAdmin() {
     const months = plan?.durationMonths || 12;
     const nextExpiry = new Date(Date.now() + (months * 30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
     setLoading(true);
-    await updateRestaurant(id, { subscriptionStatus: 'active', subscriptionExpiry: nextExpiry });
+    await updateRestaurant(id, { status: 'active', subscriptionStatus: 'active', subscriptionExpiry: nextExpiry });
     await reloadData();
     setLoading(false);
   };
@@ -659,7 +670,7 @@ export default function SuperAdmin() {
                             </td>
                             <td className="px-6 py-4 text-right">
                               <div className="inline-flex gap-2">
-                                <button onClick={() => handleSuspend(rest.id, rest.status)} className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700/50' : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'}`}>
+                                <button onClick={() => handleSuspendClick(rest.id, rest.status)} className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700/50' : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'}`}>
                                   {rest.status === 'active' ? 'Suspend' : 'Unsuspend'}
                                 </button>
                                 <button onClick={() => handleRenew(rest.id)} className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-xs text-emerald-400 transition-all font-medium border border-emerald-500/20 cursor-pointer">
@@ -956,6 +967,38 @@ export default function SuperAdmin() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Suspend Confirmation Modal */}
+      {suspendModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border transition-all ${isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-150 text-slate-900'
+            }`}>
+            <h3 className={`text-lg font-bold font-display tracking-tight mb-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              Suspend Restaurant
+            </h3>
+            <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'} mb-6 leading-relaxed`}>
+              This restaurant will immediately lose access to EasyDine until it is reactivated.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setSuspendModal({ isOpen: false, id: '', currentStatus: '' })}
+                className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSuspend(suspendModal.id, suspendModal.currentStatus)}
+                className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs cursor-pointer transition-all shadow-lg shadow-rose-500/20"
+              >
+                Suspend
+              </button>
+            </div>
           </div>
         </div>
       )}

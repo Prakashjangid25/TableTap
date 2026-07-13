@@ -102,6 +102,8 @@ export default function RestaurantAdmin() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [isSuspended, setIsSuspended] = useState(false);
+  const wasActive = React.useRef(false);
 
   // Core collections data
   const [categories, setCategories] = useState([]);
@@ -148,7 +150,7 @@ export default function RestaurantAdmin() {
 
   // Fetch kitchen accesses real-time
   useEffect(() => {
-    if (!user || !selectedRestId) return;
+    if (!user || !selectedRestId || isSuspended) return;
     const accessColRef = collection(db, "restaurants", selectedRestId, "kitchenAccess");
     const unsubscribe = onSnapshot(accessColRef, (snapshot) => {
       const list = snapshot.docs.map(doc => doc.data());
@@ -340,34 +342,57 @@ export default function RestaurantAdmin() {
     }
   };
 
-  // Load restaurant metadata when selectedRestId changes
+  // Load restaurant metadata and watch status in real-time
   useEffect(() => {
-    async function loadRestaurant() {
-      if (!user || !selectedRestId) return;
-      setLoading(true);
-      const list = await getRestaurants();
-      const r = list.find(item => item.id === selectedRestId);
-      setCurrentRest(r || null);
-      if (r) {
-        const [cats, prods, tbls, cpns] = await Promise.all([
-          getCategories(r.id),
-          getProducts(r.id),
-          getTables(r.id),
-          getCoupons(r.id)
-        ]);
-        setCategories(cats);
-        setProducts(prods);
-        setTables(tbls);
-        setCoupons(cpns);
+    if (!user || !selectedRestId) return;
+
+    const restDocRef = doc(db, 'restaurants', selectedRestId);
+    const unsubscribe = onSnapshot(restDocRef, async (docSnap) => {
+      if (docSnap.exists()) {
+        const r = { id: docSnap.id, ...docSnap.data() };
+
+        if (r.status === 'suspended') {
+          if (wasActive.current) {
+            // Real-time suspension: log out and clear session immediately
+            await logOut();
+            return;
+          } else {
+            // Just logged in, show suspended screen
+            setIsSuspended(true);
+            return;
+          }
+        } else if (r.status === 'active') {
+          wasActive.current = true;
+          setIsSuspended(false);
+        }
+
+        setCurrentRest(r);
+
+        try {
+          const [cats, prods, tbls, cpns] = await Promise.all([
+            getCategories(r.id),
+            getProducts(r.id),
+            getTables(r.id),
+            getCoupons(r.id)
+          ]);
+          setCategories(cats);
+          setProducts(prods);
+          setTables(tbls);
+          setCoupons(cpns);
+        } catch (err) {
+          console.error("Error loading restaurant collections:", err);
+        }
       }
-      setLoading(false);
-    }
-    loadRestaurant();
+    }, (error) => {
+      console.error("Firestore restaurant status error:", error);
+    });
+
+    return () => unsubscribe();
   }, [selectedRestId, user]);
 
   // Real-time listener for orders using Firebase Firestore
   useEffect(() => {
-    if (!user || !selectedRestId) return;
+    if (!user || !selectedRestId || isSuspended) return;
 
     let isInitialLoad = true;
 
@@ -1023,6 +1048,40 @@ export default function RestaurantAdmin() {
           <p className={`text-xs text-center mt-6 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
             Credentials are provided by the Super Admin when your restaurant is registered.
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════
+  // SUSPENDED SCREEN
+  // ═══════════════════════════════════════════════
+  if (isSuspended) {
+    return (
+      <div className={`min-h-screen font-sans flex items-center justify-center p-4 ${isDark ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-800'}`}>
+        <div className={`w-full max-w-md p-8 rounded-2xl border shadow-2xl text-center animate-fade-in ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200/80'
+          }`}>
+          <div className="w-16 h-16 bg-rose-500/10 border border-rose-500/20 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6">
+            <FiAlertTriangle className="text-3xl" />
+          </div>
+          <h2 className={`text-2xl font-bold font-display tracking-tight mb-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            Account Suspended
+          </h2>
+          <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'} mb-1`}>
+            Your account has been suspended by the Super Admin.
+          </p>
+          <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'} mb-8`}>
+            Please contact the Super Admin to reactivate your subscription.
+          </p>
+          <button
+            onClick={async () => {
+              setIsSuspended(false);
+              await logOut();
+            }}
+            className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg cursor-pointer"
+          >
+            Back to Login
+          </button>
         </div>
       </div>
     );
