@@ -39,6 +39,7 @@ import { doc, setDoc, getDoc, collection, query, where, getDocs, updateDoc } fro
 import { db } from '../firebase';
 import { useAuth } from './AuthProvider.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
+import ImageUploader from './ImageUploader.jsx';
 
 // Rupee symbol helper
 const INR = (amount) => `₹${Number(amount || 0).toLocaleString('en-IN')}`;
@@ -89,6 +90,7 @@ export default function SuperAdmin() {
   const [adminPassword, setAdminPassword] = useState('');
   const [adminMobile, setAdminMobile] = useState('');
   const [createError, setCreateError] = useState('');
+  const [isUploadingLogoImg, setIsUploadingLogoImg] = useState(false);
 
   // Plan Modal State — Create/Edit
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
@@ -948,8 +950,13 @@ export default function SuperAdmin() {
               </div>
 
               <div>
-                <label className={labelCls}>Store Logo URL</label>
-                <input type="url" placeholder="https://images.unsplash.com/..." value={newRest.logoUrl} onChange={(e) => setNewRest({ ...newRest, logoUrl: e.target.value })} className={`w-full ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'} border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-emerald-500`} />
+                <ImageUploader
+                  value={newRest.logoUrl || ''}
+                  onChange={(val) => setNewRest({ ...newRest, logoUrl: val })}
+                  onUploadingStateChange={setIsUploadingLogoImg}
+                  label="Store Logo Image"
+                  isDark={isDark}
+                />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -980,8 +987,12 @@ export default function SuperAdmin() {
 
               <div className="pt-4 flex justify-end gap-3">
                 <button type="button" onClick={() => { setIsModalOpen(false); resetRestaurantForm(); }} className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>Cancel</button>
-                <button type="submit" disabled={loading} className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs cursor-pointer disabled:opacity-50">
-                  {loading ? 'Deploying...' : 'Confirm Deployment'}
+                <button
+                  type="submit"
+                  disabled={loading || isUploadingLogoImg}
+                  className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs cursor-pointer disabled:opacity-50"
+                >
+                  {isUploadingLogoImg ? 'Uploading Logo...' : (loading ? 'Deploying...' : 'Confirm Deployment')}
                 </button>
               </div>
             </form>
