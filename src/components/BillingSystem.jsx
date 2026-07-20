@@ -1,29 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  FiSearch, 
-  FiPlus, 
-  FiMinus, 
-  FiTrash2, 
-  FiDollarSign, 
-  FiCheck, 
-  FiX, 
-  FiPrinter, 
-  FiDownload, 
-  FiPercent, 
+import {
+  FiSearch,
+  FiPlus,
+  FiMinus,
+  FiTrash2,
+  FiDollarSign,
+  FiCheck,
+  FiX,
+  FiPrinter,
+  FiDownload,
+  FiPercent,
   FiShoppingCart,
   FiShoppingBag,
   FiUser
 } from 'react-icons/fi';
 import { jsPDF } from 'jspdf';
 import { db } from '../firebase';
-import { 
-  collection, 
-  doc, 
+import {
+  collection,
+  doc,
   addDoc,
   getDocs,
-  query, 
-  orderBy, 
-  limit, 
+  query,
+  orderBy,
+  limit,
   writeBatch,
   serverTimestamp
 } from 'firebase/firestore';
@@ -33,7 +33,7 @@ let cachedRobotoFontBase64 = null;
 
 async function getRobotoFontBase64() {
   if (cachedRobotoFontBase64) return cachedRobotoFontBase64;
-  
+
   const urls = [
     'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.66/fonts/Roboto/Roboto-Regular.ttf',
     'https://fonts.gstatic.com/s/notosans/v36/o-0IIpQlx3QUlC5A4PNr5TRA.ttf'
@@ -47,7 +47,7 @@ async function getRobotoFontBase64() {
       clearTimeout(timeoutId);
       if (!response.ok) continue;
       const arrayBuffer = await response.arrayBuffer();
-      
+
       let binary = '';
       const bytes = new Uint8Array(arrayBuffer);
       const len = bytes.byteLength;
@@ -63,19 +63,19 @@ async function getRobotoFontBase64() {
   return null;
 }
 
-export default function BillingSystem({ 
-  products = [], 
-  categories = [], 
-  tables = [], 
-  currentRest, 
+export default function BillingSystem({
+  products = [],
+  categories = [],
+  tables = [],
+  currentRest,
   isDark,
   orders = [],
-  onShowStatus 
+  onShowStatus
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [cart, setCart] = useState([]);
-  
+
   // Modal states
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [billNumber, setBillNumber] = useState('ED-1001');
@@ -84,7 +84,7 @@ export default function BillingSystem({
   const [gstEnabled, setGstEnabled] = useState(true);
   const [serviceChargeEnabled, setServiceChargeEnabled] = useState(false);
   const [serviceChargeRate, setServiceChargeRate] = useState(5); // 5% standard
-  
+
   const [isSaving, setIsSaving] = useState(false);
 
   // Generate next sequential bill number on mount / preview trigger
@@ -94,7 +94,7 @@ export default function BillingSystem({
       const billsRef = collection(db, 'restaurants', currentRest.id, 'bills');
       const q = query(billsRef, orderBy('createdAt', 'desc'), limit(1));
       const snap = await getDocs(q);
-      
+
       if (!snap.empty) {
         const lastBill = snap.docs[0].data();
         const lastNumStr = lastBill.billNumber || 'ED-1000';
@@ -122,13 +122,50 @@ export default function BillingSystem({
     }
   }, [isPreviewOpen]);
 
+  // Automatically load active table orders when table number is selected
+  useEffect(() => {
+    if (orderType === 'Table' && selectedTableNumber && orders && orders.length > 0) {
+      const matchingTable = tables.find(t =>
+        String(t.tableName || t.tableNo || '') === String(selectedTableNumber) ||
+        t.id === selectedTableNumber
+      );
+      if (matchingTable) {
+        const activeOrders = orders.filter(o =>
+          o.tableId === matchingTable.id &&
+          ['pending', 'accepted', 'preparing', 'ready', 'served'].includes(o.status)
+        );
+
+        const aggregatedItems = [];
+        activeOrders.forEach(order => {
+          order.items?.forEach(item => {
+            const existing = aggregatedItems.find(it => it.name === item.name || it.id === item.id);
+            if (existing) {
+              existing.quantity += Number(item.quantity || 1);
+              existing.subtotal += Number(item.price || 0) * Number(item.quantity || 1);
+            } else {
+              aggregatedItems.push({
+                id: item.id || item.productId || Math.random().toString(),
+                name: item.name,
+                price: Number(item.price || 0),
+                quantity: Number(item.quantity || 1),
+                subtotal: Number(item.price || 0) * Number(item.quantity || 1)
+              });
+            }
+          });
+        });
+
+        setCart(aggregatedItems);
+      }
+    }
+  }, [selectedTableNumber, orderType, orders, tables]);
+
   // Handle manual item selection / cart controls
   const handleAddToCart = (product) => {
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
-        return prev.map(item => 
-          item.id === product.id 
+        return prev.map(item =>
+          item.id === product.id
             ? { ...item, quantity: item.quantity + 1, subtotal: (item.quantity + 1) * item.price }
             : item
         );
@@ -168,25 +205,54 @@ export default function BillingSystem({
   // Filter products by search query and category
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()));
+      (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesCategory = selectedCategory === 'all' || p.categoryId === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
   // Calculate dynamic pricing metrics
   const getPricingMetrics = (itemsList) => {
-    const subtotal = itemsList.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const taxRate = currentRest?.taxRate ? Number(currentRest.taxRate) : 5; // Fallback to 5% GST
-    const gstAmount = gstEnabled ? (subtotal * taxRate) / 100 : 0;
-    const serviceChargeAmount = serviceChargeEnabled ? (subtotal * serviceChargeRate) / 100 : 0;
-    const grandTotal = subtotal + gstAmount + serviceChargeAmount;
+    const matchingTable = tables.find(t =>
+      String(t.tableName || t.tableNo || '') === String(selectedTableNumber) ||
+      t.id === selectedTableNumber
+    );
+    const activeOrders = (orderType === 'Table' && matchingTable) ? orders.filter(o =>
+      o.tableId === matchingTable.id &&
+      ['pending', 'accepted', 'preparing', 'ready', 'served'].includes(o.status)
+    ) : [];
+
+    const hasActiveOrders = activeOrders.length > 0;
+
+    if (hasActiveOrders) {
+      const subtotalVal = activeOrders.reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
+      const discountVal = activeOrders.reduce((sum, o) => sum + Number(o.discountAmount || 0), 0);
+      const gstAmountVal = activeOrders.reduce((sum, o) => sum + Number(o.taxAmount || 0), 0);
+      const serviceChargeAmountVal = serviceChargeEnabled ? (subtotalVal * serviceChargeRate) / 100 : 0;
+      const grandTotalVal = Math.max(0, subtotalVal - discountVal + gstAmountVal + serviceChargeAmountVal);
+
+      return {
+        subtotal: subtotalVal,
+        discount: discountVal,
+        taxRate: currentRest?.taxRate ? Number(currentRest.taxRate) : 8,
+        gstAmount: gstAmountVal,
+        serviceChargeAmount: serviceChargeAmountVal,
+        grandTotal: grandTotalVal
+      };
+    }
+
+    const subtotalVal = itemsList.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const taxRateVal = currentRest?.taxRate ? Number(currentRest.taxRate) : 5;
+    const gstAmountVal = gstEnabled ? (subtotalVal * taxRateVal) / 100 : 0;
+    const serviceChargeAmountVal = serviceChargeEnabled ? (subtotalVal * serviceChargeRate) / 100 : 0;
+    const grandTotalVal = subtotalVal + gstAmountVal + serviceChargeAmountVal;
 
     return {
-      subtotal,
-      taxRate,
-      gstAmount,
-      serviceChargeAmount,
-      grandTotal
+      subtotal: subtotalVal,
+      discount: 0,
+      taxRate: taxRateVal,
+      gstAmount: gstAmountVal,
+      serviceChargeAmount: serviceChargeAmountVal,
+      grandTotal: grandTotalVal
     };
   };
 
@@ -219,12 +285,12 @@ export default function BillingSystem({
 
       // Style setups
       doc.setFont(pdfFont, 'normal');
-      
+
       // Header border/box
       doc.setDrawColor(220, 220, 220);
       doc.setLineWidth(0.5);
       doc.line(10, 10, 200, 10);
-      
+
       // Restaurant Details
       doc.setFontSize(22);
       doc.setFont(pdfFont, 'bold');
@@ -299,6 +365,17 @@ export default function BillingSystem({
       doc.text(`${currencySymbol}${billData.subtotal.toFixed(2)}`, 185, y, { align: "right" });
       y += 6;
 
+      const discountVal = billData.discount || billData.discountAmount || 0;
+      if (discountVal > 0) {
+        doc.setFont(pdfFont, 'normal');
+        doc.setTextColor(16, 185, 129); // emerald-600
+        doc.text("Coupon Discount:", summaryX, y);
+        doc.setFont(pdfFont, 'bold');
+        doc.text(`-${currencySymbol}${discountVal.toFixed(2)}`, 185, y, { align: "right" });
+        y += 6;
+        doc.setTextColor(100, 100, 100); // Reset color
+      }
+
       if (billData.gstEnabled) {
         doc.setFont(pdfFont, 'normal');
         doc.text(`GST (${billData.gstRate}%):`, summaryX, y);
@@ -328,7 +405,7 @@ export default function BillingSystem({
       y += 15;
       doc.setDrawColor(240, 240, 240);
       doc.line(10, y, 200, y);
-      
+
       // Footer
       y += 8;
       doc.setFont(pdfFont, 'italic');
@@ -436,6 +513,12 @@ export default function BillingSystem({
             <span>Subtotal:</span>
             <span>₹${billData.subtotal.toFixed(2)}</span>
           </div>
+          ${(billData.discount && billData.discount > 0) || (billData.discountAmount && billData.discountAmount > 0) ? `
+          <div class="flex" style="font-size: 11px; color: #10b981; font-weight: bold;">
+            <span>Coupon Discount:</span>
+            <span>-₹${(billData.discount || billData.discountAmount).toFixed(2)}</span>
+          </div>
+          ` : ''}
           ${billData.gstEnabled ? `
           <div class="flex" style="font-size: 11px;">
             <span>GST (${billData.gstRate}%):</span>
@@ -499,6 +582,7 @@ export default function BillingSystem({
         tableNumber: orderType === 'Table' ? selectedTableNumber : null,
         items: cart,
         subtotal: metrics.subtotal,
+        discount: metrics.discount || 0,
         gstEnabled,
         gstRate: metrics.taxRate,
         gstAmount: metrics.gstAmount,
@@ -518,13 +602,13 @@ export default function BillingSystem({
       // let's mark its active orders as completed!
       if (orderType === 'Table' && selectedTableNumber) {
         // Find matching table id from physical tables
-        const matchingTable = tables.find(t => 
-          String(t.tableName || t.tableNo || '') === String(selectedTableNumber) || 
+        const matchingTable = tables.find(t =>
+          String(t.tableName || t.tableNo || '') === String(selectedTableNumber) ||
           t.id === selectedTableNumber
         );
         if (matchingTable) {
-          const activeOrders = orders.filter(o => 
-            o.tableId === matchingTable.id && 
+          const activeOrders = orders.filter(o =>
+            o.tableId === matchingTable.id &&
             ['pending', 'accepted', 'preparing', 'ready', 'served'].includes(o.status)
           );
 
@@ -558,7 +642,7 @@ export default function BillingSystem({
 
   return (
     <div className="space-y-6 animate-fade-in">
-      
+
       {/* Title Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -573,13 +657,13 @@ export default function BillingSystem({
 
       {/* Grid container: Left is Food selector, Right is active cart */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
+
         {/* LEFT COLUMN: Food Menu (8 cols) */}
         <div className="lg:col-span-7 xl:col-span-8 space-y-6">
-          
+
           {/* Controls Bar: Search & Category filters */}
           <div className={`p-4 rounded-2xl border flex flex-col md:flex-row gap-4 justify-between items-center ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-            
+
             {/* Search Input */}
             <div className="relative w-full md:w-80">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-400">
@@ -590,14 +674,13 @@ export default function BillingSystem({
                 placeholder="Search food item (e.g. Paneer)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className={`w-full pl-10 pr-4 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all ${
-                  isDark 
-                    ? 'bg-slate-950 border-slate-800 text-slate-100 placeholder-slate-500' 
+                className={`w-full pl-10 pr-4 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all ${isDark
+                    ? 'bg-slate-950 border-slate-800 text-slate-100 placeholder-slate-500'
                     : 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400'
-                }`}
+                  }`}
               />
               {searchQuery && (
-                <button 
+                <button
                   onClick={() => setSearchQuery('')}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-amber-500"
                 >
@@ -610,11 +693,10 @@ export default function BillingSystem({
             <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 no-scrollbar">
               <button
                 onClick={() => setSelectedCategory('all')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                  selectedCategory === 'all'
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${selectedCategory === 'all'
                     ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/10'
                     : isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                }`}
+                  }`}
               >
                 All Items
               </button>
@@ -622,11 +704,10 @@ export default function BillingSystem({
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                    selectedCategory === cat.id
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${selectedCategory === cat.id
                       ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/10'
                       : isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                  }`}
+                    }`}
                 >
                   {cat.name}
                 </button>
@@ -641,15 +722,14 @@ export default function BillingSystem({
               {filteredProducts.map(prod => {
                 const cartItem = cart.find(item => item.id === prod.id);
                 const catName = categories.find(c => c.id === prod.categoryId)?.name || 'General';
-                
+
                 return (
-                  <div 
-                    key={prod.id} 
-                    className={`rounded-2xl border p-4 flex flex-col justify-between gap-4 transition-all hover:shadow-md ${
-                      cartItem 
-                        ? 'border-amber-500/40 bg-amber-500/[0.02]' 
+                  <div
+                    key={prod.id}
+                    className={`rounded-2xl border p-4 flex flex-col justify-between gap-4 transition-all hover:shadow-md ${cartItem
+                        ? 'border-amber-500/40 bg-amber-500/[0.02]'
                         : isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200/80'
-                    }`}
+                      }`}
                   >
                     <div className="space-y-2">
                       <div className="flex justify-between items-start gap-2">
@@ -696,11 +776,10 @@ export default function BillingSystem({
                       ) : (
                         <button
                           onClick={() => handleAddToCart(prod)}
-                          className={`w-full py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                            isDark 
-                              ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white' 
+                          className={`w-full py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${isDark
+                              ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white'
                               : 'bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-950'
-                          }`}
+                            }`}
                         >
                           <FiPlus className="text-xs" /> Add to Bill
                         </button>
@@ -724,7 +803,7 @@ export default function BillingSystem({
         {/* RIGHT COLUMN: Active Cart Panel (4 cols) */}
         <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-6 space-y-6">
           <div className={`rounded-2xl border overflow-hidden shadow-md flex flex-col ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-            
+
             {/* Cart Header */}
             <div className={`p-4 border-b flex justify-between items-center ${isDark ? 'border-slate-800 bg-slate-950/20' : 'border-slate-100 bg-slate-50'}`}>
               <div className="flex items-center gap-2">
@@ -802,13 +881,13 @@ export default function BillingSystem({
                   <span className="text-slate-400">Subtotal</span>
                   <span className="font-mono font-bold">₹{metrics.subtotal.toLocaleString()}</span>
                 </div>
-                
+
                 <div className="flex items-center justify-between">
                   <label className="flex items-center gap-1.5 cursor-pointer text-slate-400">
-                    <input 
-                      type="checkbox" 
-                      checked={gstEnabled} 
-                      onChange={(e) => setGstEnabled(e.target.checked)} 
+                    <input
+                      type="checkbox"
+                      checked={gstEnabled}
+                      onChange={(e) => setGstEnabled(e.target.checked)}
                       className="rounded accent-amber-500"
                     />
                     <span>GST ({metrics.taxRate}%)</span>
@@ -818,10 +897,10 @@ export default function BillingSystem({
 
                 <div className="flex items-center justify-between">
                   <label className="flex items-center gap-1.5 cursor-pointer text-slate-400">
-                    <input 
-                      type="checkbox" 
-                      checked={serviceChargeEnabled} 
-                      onChange={(e) => setServiceChargeEnabled(e.target.checked)} 
+                    <input
+                      type="checkbox"
+                      checked={serviceChargeEnabled}
+                      onChange={(e) => setServiceChargeEnabled(e.target.checked)}
                       className="rounded accent-amber-500"
                     />
                     <span>Service Charge (5%)</span>
@@ -854,7 +933,7 @@ export default function BillingSystem({
       {isPreviewOpen && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className={`w-full max-w-4xl rounded-3xl border shadow-2xl overflow-hidden animate-fade-in ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-            
+
             {/* Modal Header */}
             <div className={`p-5 border-b flex justify-between items-center ${isDark ? 'border-slate-800 bg-slate-950/20' : 'border-slate-100 bg-slate-50'}`}>
               <div className="flex items-center gap-2 text-amber-500">
@@ -863,7 +942,7 @@ export default function BillingSystem({
                   Professional Bill Designer
                 </h3>
               </div>
-              <button 
+              <button
                 onClick={() => setIsPreviewOpen(false)}
                 className={`p-1.5 rounded-xl transition-all cursor-pointer hover:text-rose-500 ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
               >
@@ -873,7 +952,7 @@ export default function BillingSystem({
 
             {/* Split layout in Modal: Left is Controls/Edit, Right is Receipt representation */}
             <div className="grid grid-cols-1 md:grid-cols-12 divide-y md:divide-y-0 md:divide-x divide-dashed divide-slate-100/10">
-              
+
               {/* LEFT COLUMN: Receipt configuration & live editor (7 cols) */}
               <div className="md:col-span-7 p-6 space-y-6 max-h-[650px] overflow-y-auto">
                 <div>
@@ -884,22 +963,20 @@ export default function BillingSystem({
                     <button
                       type="button"
                       onClick={() => setOrderType('Table')}
-                      className={`p-3.5 rounded-2xl border flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${
-                        orderType === 'Table'
+                      className={`p-3.5 rounded-2xl border flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${orderType === 'Table'
                           ? 'border-amber-500 bg-amber-500/10 text-amber-500'
                           : isDark ? 'border-slate-800 bg-slate-950/40 text-slate-400 hover:border-slate-700' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300'
-                      }`}
+                        }`}
                     >
                       <FiUser /> Seated Table
                     </button>
                     <button
                       type="button"
                       onClick={() => setOrderType('Parcel')}
-                      className={`p-3.5 rounded-2xl border flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${
-                        orderType === 'Parcel'
+                      className={`p-3.5 rounded-2xl border flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${orderType === 'Parcel'
                           ? 'border-amber-500 bg-amber-500/10 text-amber-500'
                           : isDark ? 'border-slate-800 bg-slate-950/40 text-slate-400 hover:border-slate-700' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300'
-                      }`}
+                        }`}
                     >
                       <FiShoppingBag /> Takeaway Parcel
                     </button>
@@ -915,11 +992,10 @@ export default function BillingSystem({
                       <select
                         value={selectedTableNumber}
                         onChange={(e) => setSelectedTableNumber(e.target.value)}
-                        className={`flex-1 p-3 rounded-xl border text-sm focus:outline-none focus:border-amber-500 transition-colors ${
-                          isDark 
-                            ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                        className={`flex-1 p-3 rounded-xl border text-sm focus:outline-none focus:border-amber-500 transition-colors ${isDark
+                            ? 'bg-slate-950 border-slate-800 text-slate-200'
                             : 'bg-slate-50 border-slate-200 text-slate-800'
-                        }`}
+                          }`}
                       >
                         <option value="">-- Choose Seated Table --</option>
                         {tables.map(tbl => (
@@ -928,18 +1004,17 @@ export default function BillingSystem({
                           </option>
                         ))}
                       </select>
-                      
+
                       {/* Custom input override */}
                       <input
                         type="text"
                         placeholder="Or custom No..."
                         value={selectedTableNumber}
                         onChange={(e) => setSelectedTableNumber(e.target.value)}
-                        className={`w-32 p-3 rounded-xl border text-sm focus:outline-none focus:border-amber-500 transition-colors ${
-                          isDark 
-                            ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                        className={`w-32 p-3 rounded-xl border text-sm focus:outline-none focus:border-amber-500 transition-colors ${isDark
+                            ? 'bg-slate-950 border-slate-800 text-slate-200'
                             : 'bg-slate-50 border-slate-200 text-slate-800'
-                        }`}
+                          }`}
                       />
                     </div>
                   </div>
@@ -949,17 +1024,16 @@ export default function BillingSystem({
                   <h4 className={`text-xs font-black uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                     2. Edit Bill Items & Quantities
                   </h4>
-                  
-                  <div className={`rounded-2xl border divide-y overflow-hidden max-h-56 overflow-y-auto ${
-                    isDark ? 'bg-slate-950 border-slate-800 divide-slate-800/60' : 'bg-slate-50 border-slate-200 divide-slate-200'
-                  }`}>
+
+                  <div className={`rounded-2xl border divide-y overflow-hidden max-h-56 overflow-y-auto ${isDark ? 'bg-slate-950 border-slate-800 divide-slate-800/60' : 'bg-slate-50 border-slate-200 divide-slate-200'
+                    }`}>
                     {cart.map(item => (
                       <div key={item.id} className="p-3.5 flex justify-between items-center text-xs">
                         <div className="space-y-0.5">
                           <h5 className="font-bold">{item.name}</h5>
                           <span className="font-mono text-slate-500">₹{item.price} each</span>
                         </div>
-                        
+
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-lg p-0.5">
                             <button
@@ -976,7 +1050,7 @@ export default function BillingSystem({
                               <FiPlus className="text-[10px]" />
                             </button>
                           </div>
-                          
+
                           <button
                             onClick={() => handleRemoveFromCart(item.id)}
                             className="text-rose-500 hover:text-rose-600 p-1 cursor-pointer"
@@ -991,11 +1065,10 @@ export default function BillingSystem({
                   <button
                     type="button"
                     onClick={() => setIsPreviewOpen(false)}
-                    className={`w-full py-2.5 rounded-xl text-xs font-black border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                      isDark 
-                        ? 'border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-300' 
+                    className={`w-full py-2.5 rounded-xl text-xs font-black border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${isDark
+                        ? 'border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-300'
                         : 'border-slate-200 hover:border-slate-300 bg-slate-50 text-slate-600'
-                    }`}
+                      }`}
                   >
                     + Add More Menu Items
                   </button>
@@ -1006,30 +1079,28 @@ export default function BillingSystem({
                     3. Configure Taxes & Surcharges
                   </h4>
                   <div className="grid grid-cols-2 gap-4">
-                    <label className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer ${
-                      gstEnabled ? 'border-amber-500/30 bg-amber-500/[0.02]' : 'border-slate-200 dark:border-slate-800'
-                    }`}>
+                    <label className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer ${gstEnabled ? 'border-amber-500/30 bg-amber-500/[0.02]' : 'border-slate-200 dark:border-slate-800'
+                      }`}>
                       <span className="text-xs font-bold flex items-center gap-1">
                         <FiPercent className="text-amber-500" /> Apply GST ({metrics.taxRate}%)
                       </span>
-                      <input 
-                        type="checkbox" 
-                        checked={gstEnabled} 
-                        onChange={(e) => setGstEnabled(e.target.checked)} 
+                      <input
+                        type="checkbox"
+                        checked={gstEnabled}
+                        onChange={(e) => setGstEnabled(e.target.checked)}
                         className="rounded accent-amber-500 scale-110"
                       />
                     </label>
 
-                    <label className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer ${
-                      serviceChargeEnabled ? 'border-amber-500/30 bg-amber-500/[0.02]' : 'border-slate-200 dark:border-slate-800'
-                    }`}>
+                    <label className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer ${serviceChargeEnabled ? 'border-amber-500/30 bg-amber-500/[0.02]' : 'border-slate-200 dark:border-slate-800'
+                      }`}>
                       <span className="text-xs font-bold flex items-center gap-1">
                         <FiPercent className="text-amber-500" /> Service Charge ({serviceChargeRate}%)
                       </span>
-                      <input 
-                        type="checkbox" 
-                        checked={serviceChargeEnabled} 
-                        onChange={(e) => setServiceChargeEnabled(e.target.checked)} 
+                      <input
+                        type="checkbox"
+                        checked={serviceChargeEnabled}
+                        onChange={(e) => setServiceChargeEnabled(e.target.checked)}
                         className="rounded accent-amber-500 scale-110"
                       />
                     </label>
@@ -1040,10 +1111,10 @@ export default function BillingSystem({
 
               {/* RIGHT COLUMN: Realistic Invoice / Receipt Preview (5 cols) */}
               <div className={`md:col-span-5 p-6 flex flex-col justify-between ${isDark ? 'bg-slate-950' : 'bg-slate-50'}`}>
-                
+
                 {/* Paper Representation */}
                 <div className="bg-white text-slate-900 rounded-2xl p-5 shadow-lg border border-slate-200 max-w-sm mx-auto w-full font-mono text-left text-[11px] leading-relaxed relative">
-                  
+
                   {/* Decorative Header jagged edge mock */}
                   <div className="absolute top-0 inset-x-0 h-1 bg-amber-500 rounded-t-2xl" />
 
@@ -1105,6 +1176,13 @@ export default function BillingSystem({
                       <span>₹{metrics.subtotal.toFixed(2)}</span>
                     </div>
 
+                    {metrics.discount > 0 && (
+                      <div className="flex justify-between text-emerald-600 font-bold">
+                        <span>Coupon Discount</span>
+                        <span>-₹{metrics.discount.toFixed(2)}</span>
+                      </div>
+                    )}
+
                     {gstEnabled && (
                       <div className="flex justify-between">
                         <span>GST ({metrics.taxRate}%)</span>
@@ -1142,6 +1220,7 @@ export default function BillingSystem({
                         tableNumber: selectedTableNumber,
                         items: cart,
                         subtotal: metrics.subtotal,
+                        discount: metrics.discount,
                         gstEnabled,
                         gstRate: metrics.taxRate,
                         gstAmount: metrics.gstAmount,
@@ -1152,11 +1231,10 @@ export default function BillingSystem({
                         date: new Date().toLocaleDateString('en-GB'),
                         time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
                       })}
-                      className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${
-                        isDark 
-                          ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-white' 
+                      className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark
+                          ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-white'
                           : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-800'
-                      }`}
+                        }`}
                     >
                       <FiPrinter /> Print Receipt
                     </button>
@@ -1167,6 +1245,7 @@ export default function BillingSystem({
                         tableNumber: selectedTableNumber,
                         items: cart,
                         subtotal: metrics.subtotal,
+                        discount: metrics.discount,
                         gstEnabled,
                         gstRate: metrics.taxRate,
                         gstAmount: metrics.gstAmount,
@@ -1177,11 +1256,10 @@ export default function BillingSystem({
                         date: new Date().toLocaleDateString('en-GB'),
                         time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
                       })}
-                      className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${
-                        isDark 
-                          ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-white' 
+                      className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark
+                          ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-white'
                           : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-800'
-                      }`}
+                        }`}
                     >
                       <FiDownload /> Download PDF
                     </button>
@@ -1253,7 +1331,7 @@ export function ReusableBillPreviewModal({
       const billsRef = collection(db, 'restaurants', currentRest.id, 'bills');
       const q = query(billsRef, orderBy('createdAt', 'desc'), limit(1));
       const snap = await getDocs(q);
-      
+
       if (!snap.empty) {
         const lastBill = snap.docs[0].data();
         const lastNumStr = lastBill.billNumber || 'ED-1000';
@@ -1296,11 +1374,58 @@ export function ReusableBillPreviewModal({
     setItems(prev => prev.filter(item => item.id !== productId));
   };
 
-  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const taxRate = currentRest?.taxRate ? Number(currentRest.taxRate) : 5;
-  const gstAmount = gstEnabled ? (subtotal * taxRate) / 100 : 0;
-  const serviceChargeAmount = serviceChargeEnabled ? (subtotal * serviceChargeRate) / 100 : 0;
-  const grandTotal = subtotal + gstAmount + serviceChargeAmount;
+  const getPricingMetrics = (itemsList) => {
+    const matchingTable = tables.find(t =>
+      String(t.tableName || t.tableNo || '') === String(selectedTableNumber) ||
+      t.id === selectedTableNumber
+    );
+    const activeOrders = (orderType === 'Table' && matchingTable) ? orders.filter(o =>
+      o.tableId === matchingTable.id &&
+      ['pending', 'accepted', 'preparing', 'ready', 'served'].includes(o.status)
+    ) : [];
+
+    const hasActiveOrders = activeOrders.length > 0;
+
+    if (hasActiveOrders) {
+      const subtotalVal = activeOrders.reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
+      const discountVal = activeOrders.reduce((sum, o) => sum + Number(o.discountAmount || 0), 0);
+      const gstAmountVal = activeOrders.reduce((sum, o) => sum + Number(o.taxAmount || 0), 0);
+      const serviceChargeAmountVal = serviceChargeEnabled ? (subtotalVal * serviceChargeRate) / 100 : 0;
+      const grandTotalVal = Math.max(0, subtotalVal - discountVal + gstAmountVal + serviceChargeAmountVal);
+
+      return {
+        subtotal: subtotalVal,
+        discount: discountVal,
+        taxRate: currentRest?.taxRate ? Number(currentRest.taxRate) : 8,
+        gstAmount: gstAmountVal,
+        serviceChargeAmount: serviceChargeAmountVal,
+        grandTotal: grandTotalVal
+      };
+    }
+
+    const subtotalVal = itemsList.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const taxRateVal = currentRest?.taxRate ? Number(currentRest.taxRate) : 5;
+    const gstAmountVal = gstEnabled ? (subtotalVal * taxRateVal) / 100 : 0;
+    const serviceChargeAmountVal = serviceChargeEnabled ? (subtotalVal * serviceChargeRate) / 100 : 0;
+    const grandTotalVal = subtotalVal + gstAmountVal + serviceChargeAmountVal;
+
+    return {
+      subtotal: subtotalVal,
+      discount: 0,
+      taxRate: taxRateVal,
+      gstAmount: gstAmountVal,
+      serviceChargeAmount: serviceChargeAmountVal,
+      grandTotal: grandTotalVal
+    };
+  };
+
+  const metrics = getPricingMetrics(items);
+  const subtotal = metrics.subtotal;
+  const taxRate = metrics.taxRate;
+  const gstAmount = metrics.gstAmount;
+  const serviceChargeAmount = metrics.serviceChargeAmount;
+  const grandTotal = metrics.grandTotal;
+  const discount = metrics.discount;
 
   const downloadPDF = async () => {
     try {
@@ -1327,7 +1452,7 @@ export function ReusableBillPreviewModal({
       doc.setDrawColor(220, 220, 220);
       doc.setLineWidth(0.5);
       doc.line(10, 10, 200, 10);
-      
+
       doc.setFontSize(22);
       doc.setFont(pdfFont, 'bold');
       doc.setTextColor(245, 158, 11);
@@ -1392,6 +1517,16 @@ export function ReusableBillPreviewModal({
       doc.text(`${currencySymbol}${subtotal.toFixed(2)}`, 185, y, { align: "right" });
       y += 6;
 
+      if (discount && discount > 0) {
+        doc.setFont(pdfFont, 'normal');
+        doc.setTextColor(16, 185, 129); // emerald-600
+        doc.text("Coupon Discount:", summaryX, y);
+        doc.setFont(pdfFont, 'bold');
+        doc.text(`-${currencySymbol}${discount.toFixed(2)}`, 185, y, { align: "right" });
+        y += 6;
+        doc.setTextColor(100, 100, 100); // Reset color
+      }
+
       if (gstEnabled) {
         doc.setFont(pdfFont, 'normal');
         doc.text(`GST (${taxRate}%):`, summaryX, y);
@@ -1420,7 +1555,7 @@ export function ReusableBillPreviewModal({
       y += 15;
       doc.setDrawColor(240, 240, 240);
       doc.line(10, y, 200, y);
-      
+
       y += 8;
       doc.setFont(pdfFont, 'italic');
       doc.setFontSize(9);
@@ -1527,6 +1662,12 @@ export function ReusableBillPreviewModal({
             <span>Subtotal:</span>
             <span>₹${subtotal.toFixed(2)}</span>
           </div>
+          ${discount && discount > 0 ? `
+          <div class="flex" style="font-size: 11px; color: #10b981; font-weight: bold;">
+            <span>Coupon Discount:</span>
+            <span>-₹${discount.toFixed(2)}</span>
+          </div>
+          ` : ''}
           ${gstEnabled ? `
           <div class="flex" style="font-size: 11px;">
             <span>GST (${taxRate}%):</span>
@@ -1585,6 +1726,7 @@ export function ReusableBillPreviewModal({
         tableNumber: orderType === 'Table' ? selectedTableNumber : null,
         items,
         subtotal,
+        discount: discount || 0,
         gstEnabled,
         gstRate: taxRate,
         gstAmount,
@@ -1602,13 +1744,13 @@ export function ReusableBillPreviewModal({
 
       // If Table is selected, mark all active orders for that table as completed
       if (orderType === 'Table' && selectedTableNumber) {
-        const matchingTable = tables.find(t => 
-          String(t.tableName || t.tableNo || '') === String(selectedTableNumber) || 
+        const matchingTable = tables.find(t =>
+          String(t.tableName || t.tableNo || '') === String(selectedTableNumber) ||
           t.id === selectedTableNumber
         );
         if (matchingTable) {
-          const activeOrders = orders.filter(o => 
-            o.tableId === matchingTable.id && 
+          const activeOrders = orders.filter(o =>
+            o.tableId === matchingTable.id &&
             ['pending', 'accepted', 'preparing', 'ready', 'served'].includes(o.status)
           );
 
@@ -1641,7 +1783,7 @@ export function ReusableBillPreviewModal({
   return (
     <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className={`w-full max-w-4xl rounded-3xl border shadow-2xl overflow-hidden animate-fade-in ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-        
+
         {/* Header */}
         <div className={`p-5 border-b flex justify-between items-center ${isDark ? 'border-slate-800 bg-slate-950/20' : 'border-slate-100 bg-slate-50'}`}>
           <div className="flex items-center gap-2 text-amber-500">
@@ -1650,7 +1792,7 @@ export function ReusableBillPreviewModal({
               Table Bill Creator
             </h3>
           </div>
-          <button 
+          <button
             onClick={onClose}
             className={`p-1.5 rounded-xl transition-all cursor-pointer hover:text-rose-500 ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
           >
@@ -1660,7 +1802,7 @@ export function ReusableBillPreviewModal({
 
         {/* Content columns */}
         <div className="grid grid-cols-1 md:grid-cols-12 divide-y md:divide-y-0 md:divide-x divide-dashed divide-slate-100/10">
-          
+
           {/* Controls (7 cols) */}
           <div className="md:col-span-7 p-6 space-y-6 max-h-[600px] overflow-y-auto">
             <div>
@@ -1671,22 +1813,20 @@ export function ReusableBillPreviewModal({
                 <button
                   type="button"
                   onClick={() => setOrderType('Table')}
-                  className={`p-3 rounded-xl border flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${
-                    orderType === 'Table'
+                  className={`p-3 rounded-xl border flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${orderType === 'Table'
                       ? 'border-amber-500 bg-amber-500/10 text-amber-500'
                       : isDark ? 'border-slate-800 bg-slate-950/40 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'
-                  }`}
+                    }`}
                 >
                   <FiUser /> Seated Table
                 </button>
                 <button
                   type="button"
                   onClick={() => setOrderType('Parcel')}
-                  className={`p-3 rounded-xl border flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${
-                    orderType === 'Parcel'
+                  className={`p-3 rounded-xl border flex items-center justify-center gap-2 transition-all cursor-pointer font-bold ${orderType === 'Parcel'
                       ? 'border-amber-500 bg-amber-500/10 text-amber-500'
                       : isDark ? 'border-slate-800 bg-slate-950/40 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'
-                  }`}
+                    }`}
                 >
                   <FiShoppingBag /> Takeaway Parcel
                 </button>
@@ -1706,9 +1846,8 @@ export function ReusableBillPreviewModal({
                       ? selectedTableNumber
                       : `Table ${selectedTableNumber}`
                   }
-                  className={`w-full p-3 rounded-xl border text-sm font-semibold opacity-85 ${
-                    isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-600'
-                  }`}
+                  className={`w-full p-3 rounded-xl border text-sm font-semibold opacity-85 ${isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-600'
+                    }`}
                 />
               </div>
             )}
@@ -1717,17 +1856,16 @@ export function ReusableBillPreviewModal({
               <h4 className={`text-xs font-black uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                 2. Live Order Items
               </h4>
-              
-              <div className={`rounded-xl border divide-y overflow-hidden max-h-56 overflow-y-auto ${
-                isDark ? 'bg-slate-950 border-slate-800 divide-slate-800/60' : 'bg-slate-50 border-slate-200 divide-slate-200'
-              }`}>
+
+              <div className={`rounded-xl border divide-y overflow-hidden max-h-56 overflow-y-auto ${isDark ? 'bg-slate-950 border-slate-800 divide-slate-800/60' : 'bg-slate-50 border-slate-200 divide-slate-200'
+                }`}>
                 {items.map(item => (
                   <div key={item.id} className="p-3 flex justify-between items-center text-xs">
                     <div className="space-y-0.5">
                       <h5 className="font-bold">{item.name}</h5>
                       <span className="font-mono text-slate-500">₹{item.price} each</span>
                     </div>
-                    
+
                     <div className="flex items-center gap-2.5">
                       <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-lg p-0.5">
                         <button
@@ -1744,7 +1882,7 @@ export function ReusableBillPreviewModal({
                           <FiPlus className="text-[10px]" />
                         </button>
                       </div>
-                      
+
                       <button
                         onClick={() => handleRemoveItem(item.id)}
                         className="text-rose-500 hover:text-rose-600 p-1 cursor-pointer"
@@ -1762,30 +1900,28 @@ export function ReusableBillPreviewModal({
                 3. Configure Taxes & Surcharges
               </h4>
               <div className="grid grid-cols-2 gap-4">
-                <label className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer ${
-                  gstEnabled ? 'border-amber-500/30 bg-amber-500/[0.02]' : 'border-slate-200 dark:border-slate-800'
-                }`}>
+                <label className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer ${gstEnabled ? 'border-amber-500/30 bg-amber-500/[0.02]' : 'border-slate-200 dark:border-slate-800'
+                  }`}>
                   <span className="text-xs font-bold flex items-center gap-1">
                     <FiPercent className="text-amber-500" /> Apply GST ({taxRate}%)
                   </span>
-                  <input 
-                    type="checkbox" 
-                    checked={gstEnabled} 
-                    onChange={(e) => setGstEnabled(e.target.checked)} 
+                  <input
+                    type="checkbox"
+                    checked={gstEnabled}
+                    onChange={(e) => setGstEnabled(e.target.checked)}
                     className="rounded accent-amber-500 scale-110"
                   />
                 </label>
 
-                <label className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer ${
-                  serviceChargeEnabled ? 'border-amber-500/30 bg-amber-500/[0.02]' : 'border-slate-200 dark:border-slate-800'
-                }`}>
+                <label className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer ${serviceChargeEnabled ? 'border-amber-500/30 bg-amber-500/[0.02]' : 'border-slate-200 dark:border-slate-800'
+                  }`}>
                   <span className="text-xs font-bold flex items-center gap-1">
                     <FiPercent className="text-amber-500" /> Service Charge ({serviceChargeRate}%)
                   </span>
-                  <input 
-                    type="checkbox" 
-                    checked={serviceChargeEnabled} 
-                    onChange={(e) => setServiceChargeEnabled(e.target.checked)} 
+                  <input
+                    type="checkbox"
+                    checked={serviceChargeEnabled}
+                    onChange={(e) => setServiceChargeEnabled(e.target.checked)}
                     className="rounded accent-amber-500 scale-110"
                   />
                 </label>
@@ -1796,10 +1932,10 @@ export function ReusableBillPreviewModal({
 
           {/* Receipt View (5 cols) */}
           <div className={`md:col-span-5 p-6 flex flex-col justify-between ${isDark ? 'bg-slate-950' : 'bg-slate-50'}`}>
-            
+
             <div className="bg-white text-slate-900 rounded-2xl p-5 shadow-lg border border-slate-200 max-w-sm mx-auto w-full font-mono text-left text-[11px] leading-relaxed relative">
               <div className="absolute top-0 inset-x-0 h-1 bg-amber-500 rounded-t-2xl" />
-              
+
               <div className="text-center pt-2 pb-3">
                 {currentRest?.logoUrl && <img src={currentRest.logoUrl} alt="Logo" className="max-h-12 mx-auto mb-2.5 rounded object-contain" />}
                 <h5 className="font-bold text-sm tracking-tight">{currentRest?.name || 'EASYDINE'}</h5>
@@ -1852,6 +1988,13 @@ export function ReusableBillPreviewModal({
                   <span>₹{subtotal.toFixed(2)}</span>
                 </div>
 
+                {discount > 0 && (
+                  <div className="flex justify-between text-emerald-600 font-bold">
+                    <span>Coupon Discount</span>
+                    <span>-₹{discount.toFixed(2)}</span>
+                  </div>
+                )}
+
                 {gstEnabled && (
                   <div className="flex justify-between">
                     <span>GST ({taxRate}%)</span>
@@ -1882,17 +2025,15 @@ export function ReusableBillPreviewModal({
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={handlePrint}
-                  className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${
-                    isDark ? 'border-slate-800 bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-100'
-                  }`}
+                  className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark ? 'border-slate-800 bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-100'
+                    }`}
                 >
                   <FiPrinter /> Print Receipt
                 </button>
                 <button
                   onClick={downloadPDF}
-                  className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${
-                    isDark ? 'border-slate-800 bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-100'
-                  }`}
+                  className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark ? 'border-slate-800 bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-100'
+                    }`}
                 >
                   <FiDownload /> Download PDF
                 </button>
