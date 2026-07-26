@@ -152,8 +152,9 @@ export default function CustomerMenu() {
       }
     }
 
+    const currentTaxRate = restaurant.taxRate || 8;
     const discountedSubtotal = Math.max(0, subtotal - discount);
-    const tax = discountedSubtotal * ((restaurant.taxRate || 8) / 100);
+    const tax = discountedSubtotal * (currentTaxRate / 100);
     const total = discountedSubtotal + tax;
 
     const orderRecord = {
@@ -170,7 +171,7 @@ export default function CustomerMenu() {
       totalAmount: subtotal,
       discountAmount: discount,
       taxAmount: tax,
-      taxRate: taxRate,
+      taxRate: currentTaxRate,
       grandTotal: total,
       couponCode: activeCoupon ? activeCoupon.code : null,
       notes: specialInstructions,
@@ -179,11 +180,17 @@ export default function CustomerMenu() {
     };
 
     setLoading(true);
-    await createOrder(restaurant.id, orderRecord);
-    setPlacedOrder(orderRecord);
-    setCart([]);
-    setShowCart(false);
-    setLoading(false);
+    try {
+      await createOrder(restaurant.id, orderRecord);
+      setPlacedOrder(orderRecord);
+      setCart([]);
+      setShowCart(false);
+    } catch (error) {
+      console.error("Checkout failed:", error);
+      alert("Failed to place order. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Filter products by category and query search
@@ -708,10 +715,17 @@ export default function CustomerMenu() {
             <div className="p-4 bg-slate-50 border-t shrink-0">
               <button
                 onClick={handleCheckout}
-                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm rounded-xl shadow-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                disabled={loading}
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-bold text-sm rounded-xl shadow-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <span>Confirm Order Checkout</span>
-                <FiArrowRight />
+                {loading ? (
+                  <span>Processing Checkout...</span>
+                ) : (
+                  <>
+                    <span>Confirm Order Checkout</span>
+                    <FiArrowRight />
+                  </>
+                )}
               </button>
             </div>
 
