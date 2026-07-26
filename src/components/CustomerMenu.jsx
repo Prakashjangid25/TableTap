@@ -170,7 +170,9 @@ export default function CustomerMenu() {
       totalAmount: subtotal,
       discountAmount: discount,
       taxAmount: tax,
+      taxRate: taxRate,
       grandTotal: total,
+      couponCode: activeCoupon ? activeCoupon.code : null,
       notes: specialInstructions,
       status: 'pending',
       createdAt: new Date().toISOString()
@@ -258,6 +260,14 @@ export default function CustomerMenu() {
       return 'bg-slate-100 text-slate-400 border-slate-200';
     };
 
+    const subtotalVal = placedOrder.totalAmount ?? placedOrder.subtotal ?? (placedOrder.items?.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0) || 0);
+    const discountVal = placedOrder.discountAmount ?? placedOrder.discount ?? 0;
+    const taxVal = placedOrder.taxAmount ?? placedOrder.gstAmount ?? 0;
+    const serviceChargeVal = placedOrder.serviceChargeAmount ?? 0;
+    const grandTotalVal = placedOrder.grandTotal ?? 0;
+    const couponCodeVal = placedOrder.couponCode;
+    const taxRateVal = placedOrder.taxRate || restaurant?.taxRate;
+
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col max-w-md mx-auto relative shadow-2xl overflow-hidden border-x">
         {/* Tracker Header */}
@@ -316,9 +326,37 @@ export default function CustomerMenu() {
               ))}
             </div>
 
-            <div className="border-t pt-3 text-right flex justify-between text-xs font-semibold text-slate-500">
-              <span>Grand Total Paid</span>
-              <span className="font-mono font-bold text-slate-900 text-sm">₹{placedOrder.grandTotal.toFixed(2)}</span>
+            <div className="border-t pt-3 space-y-2 text-xs text-slate-500 font-medium font-display">
+              <div className="flex justify-between">
+                <span>Subtotal</span>
+                <span className="font-mono text-slate-700 font-bold">₹{subtotalVal.toFixed(2)}</span>
+              </div>
+
+              {discountVal > 0 && (
+                <div className="flex justify-between text-emerald-600 font-semibold">
+                  <span>Coupon {couponCodeVal ? `(${couponCodeVal})` : ''}</span>
+                  <span className="font-mono font-bold">-₹{discountVal.toFixed(2)}</span>
+                </div>
+              )}
+
+              {taxVal > 0 && (
+                <div className="flex justify-between">
+                  <span>GST {taxRateVal ? `(${taxRateVal}%)` : ''}</span>
+                  <span className="font-mono text-slate-700 font-bold">₹{taxVal.toFixed(2)}</span>
+                </div>
+              )}
+
+              {serviceChargeVal > 0 && (
+                <div className="flex justify-between">
+                  <span>Service Charge {placedOrder.serviceChargeRate ? `(${placedOrder.serviceChargeRate}%)` : ''}</span>
+                  <span className="font-mono text-slate-700 font-bold">₹{serviceChargeVal.toFixed(2)}</span>
+                </div>
+              )}
+
+              <div className="border-t border-dashed pt-2 flex justify-between text-sm font-bold text-slate-900">
+                <span>Grand Total Paid</span>
+                <span className="font-mono font-extrabold text-amber-600">₹{grandTotalVal.toFixed(2)}</span>
+              </div>
             </div>
           </div>
 
