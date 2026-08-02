@@ -27,6 +27,7 @@ import {
   writeBatch,
   serverTimestamp
 } from 'firebase/firestore';
+import { executePrint } from '../utils/printSystem';
 
 // Global cache for fetched font to avoid multiple network calls
 let cachedRobotoFontBase64 = null;
@@ -431,130 +432,9 @@ export default function BillingSystem({
     }
   };
 
-  // Trigger Print Receipt (Formatted for thermal layout or A4)
-  const printReceipt = (billData) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert("Please allow popups to print.");
-      return;
-    }
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Print Bill - ${billData.billNumber}</title>
-          <style>
-            @media print {
-              body { margin: 0; padding: 15px; font-family: 'Courier New', Courier, monospace; }
-            }
-            body {
-              font-family: 'Courier New', Courier, monospace;
-              max-width: 350px;
-              margin: 0 auto;
-              padding: 10px;
-              color: #000;
-              background: #fff;
-            }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-            .bold { font-weight: bold; }
-            .divider { border-top: 1px dashed #000; margin: 8px 0; }
-            .flex { display: flex; justify-content: space-between; }
-            .items-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
-            .items-table th, .items-table td { text-align: left; padding: 4px 0; font-size: 12px; }
-            .items-table th.right, .items-table td.right { text-align: right; }
-            .grand-total { font-size: 16px; font-weight: bold; margin-top: 8px; }
-          </style>
-        </head>
-        <body>
-          <div class="text-center">
-            ${currentRest?.logoUrl ? `<img src="${currentRest.logoUrl}" style="max-height: 40px; margin-bottom: 4px; border-radius: 4px;" /><br/>` : ''}
-            <span class="bold" style="font-size: 16px;">${currentRest?.name || 'EASYDINE'}</span><br/>
-            ${currentRest?.address ? `<span style="font-size: 10px;">${currentRest.address}</span><br/>` : ''}
-            ${currentRest?.contact ? `<span style="font-size: 10px;">Tel: ${currentRest.contact}</span><br/>` : ''}
-            <span class="bold" style="font-size: 12px; display: inline-block; margin-top: 4px; border: 1px solid #000; padding: 1px 6px;">TAX INVOICE</span>
-          </div>
-          
-          <div class="divider" style="margin-top: 12px;"></div>
-          <div class="flex" style="font-size: 11px;">
-            <div>Bill No: <span class="bold">${billData.billNumber}</span></div>
-            <div>Date: ${billData.date}</div>
-          </div>
-          <div class="flex" style="font-size: 11px;">
-            <div>Type: <span class="bold">${billData.orderType}</span></div>
-            <div>Time: ${billData.time}</div>
-          </div>
-          ${billData.orderType === 'Table' ? `<div style="font-size: 11px;">Table: <span class="bold">${billData.tableNumber || 'N/A'}</span></div>` : ''}
-          <div class="divider"></div>
-          
-          <table class="items-table">
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th class="right">Qty</th>
-                <th class="right">Price</th>
-                <th class="right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${billData.items.map(it => `
-                <tr>
-                  <td>${it.name}</td>
-                  <td class="right">${it.quantity}</td>
-                  <td class="right">₹${it.price.toFixed(2)}</td>
-                  <td class="right">₹${it.subtotal.toFixed(2)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          
-          <div class="divider"></div>
-          <div class="flex" style="font-size: 11px;">
-            <span>Subtotal:</span>
-            <span>₹${billData.subtotal.toFixed(2)}</span>
-          </div>
-          ${(billData.discount && billData.discount > 0) || (billData.discountAmount && billData.discountAmount > 0) ? `
-          <div class="flex" style="font-size: 11px; color: #10b981; font-weight: bold;">
-            <span>Coupon Discount:</span>
-            <span>-₹${(billData.discount || billData.discountAmount).toFixed(2)}</span>
-          </div>
-          ` : ''}
-          ${billData.gstEnabled ? `
-          <div class="flex" style="font-size: 11px;">
-            <span>GST (${billData.gstRate}%):</span>
-            <span>₹${billData.gstAmount.toFixed(2)}</span>
-          </div>
-          ` : ''}
-          ${billData.serviceChargeEnabled ? `
-          <div class="flex" style="font-size: 11px;">
-            <span>Service Charge (${billData.serviceChargeRate}%):</span>
-            <span>₹${billData.serviceChargeAmount.toFixed(2)}</span>
-          </div>
-          ` : ''}
-          
-          <div class="divider"></div>
-          <div class="flex grand-total">
-            <span>GRAND TOTAL:</span>
-            <span>₹${billData.grandTotal.toFixed(2)}</span>
-          </div>
-          <div class="divider" style="border-top: 2px double #000; margin-top: 4px;"></div>
-          
-          <div class="text-center" style="font-size: 10px; margin-top: 15px;">
-            <span>Thank you for dining with us!</span><br/>
-            <span style="font-weight: bold;">Visit Again</span>
-            ${currentRest?.showPoweredBy ? `
-              <div style="font-size: 8px; color: #888; margin-top: 10px;">Powered by EasyDine</div>
-            ` : ''}
-          </div>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 300);
+  // Trigger Print Receipt (Uses saved layout preferences or explicit override)
+  const printReceipt = (billData, overrideLayout = null) => {
+    executePrint(billData, currentRest, overrideLayout);
   };
 
   // Final Action: Save Bill
@@ -630,6 +510,10 @@ export default function BillingSystem({
       // Reset and close
       setCart([]);
       setIsPreviewOpen(false);
+
+      if (currentRest?.autoPrintOnSave) {
+        printReceipt(billData);
+      }
     } catch (err) {
       console.error("Error saving bill: ", err);
       alert("Failed to save bill. See console.");
@@ -1231,7 +1115,7 @@ export default function BillingSystem({
                         date: new Date().toLocaleDateString('en-GB'),
                         time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
                       })}
-                      className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark
+                      className={`py-2.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark
                           ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-white'
                           : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-800'
                         }`}
@@ -1239,7 +1123,7 @@ export default function BillingSystem({
                       <FiPrinter /> Print Receipt
                     </button>
                     <button
-                      onClick={() => downloadPDFReceipt({
+                      onClick={() => printReceipt({
                         billNumber,
                         orderType,
                         tableNumber: selectedTableNumber,
@@ -1255,15 +1139,41 @@ export default function BillingSystem({
                         grandTotal: metrics.grandTotal,
                         date: new Date().toLocaleDateString('en-GB'),
                         time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-                      })}
-                      className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark
-                          ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-white'
-                          : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-800'
+                      }, 'a4')}
+                      className={`py-2.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark
+                          ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-amber-400'
+                          : 'border-slate-200 bg-white hover:bg-slate-100 text-amber-600'
                         }`}
                     >
-                      <FiDownload /> Download PDF
+                      <FiPrinter /> Print A4 Tax Invoice
                     </button>
                   </div>
+
+                  <button
+                    onClick={() => downloadPDFReceipt({
+                      billNumber,
+                      orderType,
+                      tableNumber: selectedTableNumber,
+                      items: cart,
+                      subtotal: metrics.subtotal,
+                      discount: metrics.discount,
+                      gstEnabled,
+                      gstRate: metrics.taxRate,
+                      gstAmount: metrics.gstAmount,
+                      serviceChargeEnabled,
+                      serviceChargeRate,
+                      serviceChargeAmount: metrics.serviceChargeAmount,
+                      grandTotal: metrics.grandTotal,
+                      date: new Date().toLocaleDateString('en-GB'),
+                      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                    })}
+                    className={`w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark
+                        ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-white'
+                        : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-800'
+                      }`}
+                  >
+                    <FiDownload /> Download PDF
+                  </button>
 
                   <button
                     onClick={handleSaveBill}
@@ -1579,128 +1489,24 @@ export function ReusableBillPreviewModal({
     }
   };
 
-  const handlePrint = () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert("Please allow popups to print.");
-      return;
-    }
-
-    const dateStr = new Date().toLocaleDateString('en-GB');
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Print Bill - ${billNumber}</title>
-          <style>
-            @media print {
-              body { margin: 0; padding: 15px; font-family: 'Courier New', Courier, monospace; }
-            }
-            body {
-              font-family: 'Courier New', Courier, monospace;
-              max-width: 350px;
-              margin: 0 auto;
-              padding: 10px;
-              color: #000;
-              background: #fff;
-            }
-            .text-center { text-align: center; }
-            .bold { font-weight: bold; }
-            .divider { border-top: 1px dashed #000; margin: 8px 0; }
-            .flex { display: flex; justify-content: space-between; }
-            .items-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
-            .items-table th, .items-table td { text-align: left; padding: 4px 0; font-size: 12px; }
-            .items-table th.right, .items-table td.right { text-align: right; }
-            .grand-total { font-size: 16px; font-weight: bold; margin-top: 8px; }
-          </style>
-        </head>
-        <body>
-          <div class="text-center">
-            ${currentRest?.logoUrl ? `<img src="${currentRest.logoUrl}" style="max-height: 40px; margin-bottom: 4px; border-radius: 4px;" /><br/>` : ''}
-            <span class="bold" style="font-size: 16px;">${currentRest?.name || 'EASYDINE'}</span><br/>
-            ${currentRest?.address ? `<span style="font-size: 10px;">${currentRest.address}</span><br/>` : ''}
-            ${currentRest?.contact ? `<span style="font-size: 10px;">Tel: ${currentRest.contact}</span><br/>` : ''}
-            <span class="bold" style="font-size: 12px; display: inline-block; margin-top: 4px; border: 1px solid #000; padding: 1px 6px;">TAX INVOICE</span>
-          </div>
-          
-          <div class="divider" style="margin-top: 12px;"></div>
-          <div class="flex" style="font-size: 11px;">
-            <div>Bill No: <span class="bold">${billNumber}</span></div>
-            <div>Date: ${dateStr}</div>
-          </div>
-          <div class="flex" style="font-size: 11px;">
-            <div>Type: <span class="bold">${orderType}</span></div>
-            <div>Time: ${timeStr}</div>
-          </div>
-          ${orderType === 'Table' ? `<div style="font-size: 11px;">Table: <span class="bold">${selectedTableNumber || 'N/A'}</span></div>` : ''}
-          <div class="divider"></div>
-          
-          <table class="items-table">
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th class="right">Qty</th>
-                <th class="right">Price</th>
-                <th class="right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${items.map(it => `
-                <tr>
-                  <td>${it.name}</td>
-                  <td class="right">${it.quantity}</td>
-                  <td class="right">₹${it.price.toFixed(2)}</td>
-                  <td class="right">₹${it.subtotal.toFixed(2)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          
-          <div class="divider"></div>
-          <div class="flex" style="font-size: 11px;">
-            <span>Subtotal:</span>
-            <span>₹${subtotal.toFixed(2)}</span>
-          </div>
-          ${discount && discount > 0 ? `
-          <div class="flex" style="font-size: 11px; color: #10b981; font-weight: bold;">
-            <span>Coupon Discount:</span>
-            <span>-₹${discount.toFixed(2)}</span>
-          </div>
-          ` : ''}
-          ${gstEnabled ? `
-          <div class="flex" style="font-size: 11px;">
-            <span>GST (${taxRate}%):</span>
-            <span>₹${gstAmount.toFixed(2)}</span>
-          </div>
-          ` : ''}
-          ${serviceChargeEnabled ? `
-          <div class="flex" style="font-size: 11px;">
-            <span>Service Charge (${serviceChargeRate}%):</span>
-            <span>₹${serviceChargeAmount.toFixed(2)}</span>
-          </div>
-          ` : ''}
-          
-          <div class="divider"></div>
-          <div class="flex grand-total">
-            <span>GRAND TOTAL:</span>
-            <span>₹${grandTotal.toFixed(2)}</span>
-          </div>
-          <div class="divider" style="border-top: 2px double #000; margin-top: 4px;"></div>
-          
-          <div class="text-center" style="font-size: 10px; margin-top: 15px;">
-            <span>Thank you for dining with us!</span><br/>
-            <span style="font-weight: bold;">Visit Again</span>
-          </div>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 300);
+  const handlePrint = (overrideLayout = null) => {
+    executePrint({
+      billNumber,
+      orderType,
+      tableNumber: selectedTableNumber,
+      items,
+      subtotal,
+      discount: discount || 0,
+      gstEnabled,
+      gstRate: taxRate,
+      gstAmount,
+      serviceChargeEnabled,
+      serviceChargeRate,
+      serviceChargeAmount,
+      grandTotal,
+      date: new Date().toLocaleDateString('en-GB'),
+      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    }, currentRest, overrideLayout);
   };
 
   const handleSave = async () => {
@@ -1767,6 +1573,10 @@ export function ReusableBillPreviewModal({
 
       if (onShowStatus) {
         onShowStatus(`Bill ${billNumber} saved successfully!`);
+      }
+
+      if (currentRest?.autoPrintOnSave) {
+        handlePrint();
       }
 
       onClose();
@@ -2024,20 +1834,28 @@ export function ReusableBillPreviewModal({
             <div className="space-y-2.5 pt-6 border-t border-dashed border-slate-100/10 w-full">
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={handlePrint}
-                  className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark ? 'border-slate-800 bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-100'
+                  onClick={() => handlePrint()}
+                  className={`py-2.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark ? 'border-slate-800 bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-100'
                     }`}
                 >
                   <FiPrinter /> Print Receipt
                 </button>
                 <button
-                  onClick={downloadPDF}
-                  className={`py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark ? 'border-slate-800 bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-100'
+                  onClick={() => handlePrint('a4')}
+                  className={`py-2.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark ? 'border-slate-800 bg-slate-900 text-amber-400 hover:bg-slate-800' : 'border-slate-200 bg-white text-amber-600 hover:bg-slate-100'
                     }`}
                 >
-                  <FiDownload /> Download PDF
+                  <FiPrinter /> Print A4 Tax Invoice
                 </button>
               </div>
+
+              <button
+                onClick={downloadPDF}
+                className={`w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border ${isDark ? 'border-slate-800 bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-100'
+                  }`}
+              >
+                <FiDownload /> Download PDF
+              </button>
 
               <button
                 onClick={handleSave}

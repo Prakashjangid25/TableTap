@@ -1012,7 +1012,12 @@ export default function RestaurantAdmin() {
       name: currentRest.name, description: currentRest.description,
       logoUrl: currentRest.logoUrl, themeColor: currentRest.themeColor,
       taxRate: Number(currentRest.taxRate), address: currentRest.address, contact: currentRest.contact,
-      showPoweredBy: currentRest.showPoweredBy ?? false
+      showPoweredBy: currentRest.showPoweredBy ?? false,
+      printLayout: currentRest.printLayout || '80mm',
+      autoOpenPrintDialog: currentRest.autoOpenPrintDialog ?? true,
+      includeLogoInPrint: currentRest.includeLogoInPrint ?? true,
+      includePoweredByInPrint: currentRest.includePoweredByInPrint ?? (currentRest.showPoweredBy ?? true),
+      autoPrintOnSave: currentRest.autoPrintOnSave ?? false
     });
     setSettingsStatus('Settings updated successfully!');
     setTimeout(() => setSettingsStatus(''), 3000);
@@ -2231,7 +2236,8 @@ export default function RestaurantAdmin() {
                         onClick={() => {
                           setCurrentRest({
                             ...currentRest,
-                            showPoweredBy: !currentRest.showPoweredBy
+                            showPoweredBy: !currentRest.showPoweredBy,
+                            includePoweredByInPrint: !currentRest.showPoweredBy
                           });
                         }}
                         className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${currentRest.showPoweredBy ? 'bg-amber-500' : isDark ? 'bg-slate-700' : 'bg-slate-200'
@@ -2244,6 +2250,108 @@ export default function RestaurantAdmin() {
                       </button>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* Printing Preferences Section */}
+              <div className={`pt-6 border-t space-y-4 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
+                <div>
+                  <h3 className={`text-base font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>Printing Preferences</h3>
+                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'} mt-0.5`}>Configure default print layouts, logo headers, and automatic print dialog behaviors.</p>
+                </div>
+
+                {/* Default Print Layout Selector */}
+                <div className={`p-4 rounded-xl border space-y-3 ${isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50 border-slate-150'}`}>
+                  <h4 className={`text-xs font-bold tracking-wider uppercase ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Default Print Layout</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {[
+                      { id: '58mm', name: '58mm Thermal Receipt', desc: 'Compact thermal paper width' },
+                      { id: '80mm', name: '80mm Thermal Receipt', desc: 'Standard POS thermal paper' },
+                      { id: 'a4', name: 'A4 Tax Invoice', desc: 'Full page GST tax invoice' }
+                    ].map(layout => {
+                      const selected = (currentRest.printLayout || '80mm') === layout.id;
+                      return (
+                        <button
+                          key={layout.id}
+                          type="button"
+                          onClick={() => setCurrentRest({ ...currentRest, printLayout: layout.id })}
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${selected
+                              ? 'border-amber-500 bg-amber-500/10 text-amber-500 shadow-sm'
+                              : isDark
+                                ? 'border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-700'
+                                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                            }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold">{layout.name}</span>
+                            <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${selected ? 'border-amber-500 bg-amber-500' : 'border-slate-400'}`}>
+                              {selected && <div className="w-1.5 h-1.5 rounded-full bg-slate-950" />}
+                            </div>
+                          </div>
+                          <p className={`text-[10px] mt-1 ${selected ? 'text-amber-500/80' : 'text-slate-500'}`}>{layout.desc}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Print Options Toggles Grid */}
+                <div className={`p-4 rounded-xl border space-y-4 ${isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50 border-slate-150'}`}>
+                  <h4 className={`text-xs font-bold tracking-wider uppercase ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Thermal & Invoice Print Controls</h4>
+
+                  {[
+                    {
+                      key: 'autoOpenPrintDialog',
+                      label: 'Auto Open Print Dialog',
+                      desc: 'Automatically open system printer window when Print is clicked.',
+                      val: currentRest.autoOpenPrintDialog ?? true,
+                      toggle: () => setCurrentRest({ ...currentRest, autoOpenPrintDialog: !(currentRest.autoOpenPrintDialog ?? true) })
+                    },
+                    {
+                      key: 'includeLogoInPrint',
+                      label: 'Include Restaurant Logo',
+                      desc: 'Print restaurant logo graphic on receipts and invoices.',
+                      val: currentRest.includeLogoInPrint ?? true,
+                      toggle: () => setCurrentRest({ ...currentRest, includeLogoInPrint: !(currentRest.includeLogoInPrint ?? true) })
+                    },
+                    {
+                      key: 'includePoweredByInPrint',
+                      label: 'Include "Powered by EasyDine"',
+                      desc: 'Display "Powered by EasyDine" branding at the bottom of printed bills.',
+                      val: currentRest.includePoweredByInPrint ?? (currentRest.showPoweredBy ?? true),
+                      toggle: () => setCurrentRest({ ...currentRest, includePoweredByInPrint: !(currentRest.includePoweredByInPrint ?? (currentRest.showPoweredBy ?? true)) })
+                    },
+                    {
+                      key: 'autoPrintOnSave',
+                      label: 'Print Automatically After Save & Close Bill',
+                      desc: 'Trigger default bill print immediately when saving a new bill.',
+                      val: currentRest.autoPrintOnSave ?? false,
+                      toggle: () => setCurrentRest({ ...currentRest, autoPrintOnSave: !(currentRest.autoPrintOnSave ?? false) })
+                    }
+                  ].map((opt, idx) => (
+                    <div key={idx} className="flex items-center justify-between border-b last:border-b-0 pb-3 last:pb-0 border-slate-200/50 dark:border-slate-800/50">
+                      <div>
+                        <p className={`text-xs font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{opt.label}</p>
+                        <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'} mt-0.5`}>{opt.desc}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-[10px] font-black tracking-wider ${opt.val ? 'text-amber-500' : isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                          {opt.val ? 'ON' : 'OFF'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={opt.toggle}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${opt.val ? 'bg-amber-500' : isDark ? 'bg-slate-700' : 'bg-slate-200'
+                            }`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${opt.val ? 'translate-x-5' : 'translate-x-0'
+                              }`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
