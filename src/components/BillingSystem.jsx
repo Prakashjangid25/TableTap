@@ -15,7 +15,7 @@ import {
   FiUser
 } from 'react-icons/fi';
 import { jsPDF } from 'jspdf';
-import { db } from '../firebase';
+import { db } from '../firebase.js';
 import {
   collection,
   doc,
@@ -27,7 +27,7 @@ import {
   writeBatch,
   serverTimestamp
 } from 'firebase/firestore';
-import { executePrint } from '../utils/printSystem';
+import { executePrint } from '../utils/printSystem.js';
 
 // Global cache for fetched font to avoid multiple network calls
 let cachedRobotoFontBase64 = null;

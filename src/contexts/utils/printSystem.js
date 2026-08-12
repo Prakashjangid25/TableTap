@@ -9,12 +9,12 @@ export function generatePrintHTML(billData, currentRest, layoutOverride = null) 
   const includeLogo = currentRest?.includeLogoInPrint ?? true;
   const includePoweredBy = currentRest?.includePoweredByInPrint ?? (currentRest?.showPoweredBy ?? true);
 
-  const logoHtml = (includeLogo && currentRest?.logoUrl) 
-    ? `<img src="${currentRest.logoUrl}" class="brand-logo" alt="Logo" /><br/>` 
+  const logoHtml = (includeLogo && currentRest?.logoUrl)
+    ? `<img src="${currentRest.logoUrl}" class="brand-logo" alt="Logo" /><br/>`
     : '';
-    
-  const poweredByHtml = includePoweredBy 
-    ? `<div class="powered-by">Powered by EasyDine</div>` 
+
+  const poweredByHtml = includePoweredBy
+    ? `<div class="powered-by">Powered by EasyDine</div>`
     : '';
 
   const dateStr = billData.date || new Date().toLocaleDateString('en-GB');
@@ -371,3 +371,6 @@ export function executePrint(billData, currentRest, layoutOverride = null) {
     }, 300);
   }
 }
+
+export default executePrint;
+
