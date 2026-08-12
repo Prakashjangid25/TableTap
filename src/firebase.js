@@ -14,14 +14,10 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-
 const db = initializeFirestore(app, {
   experimentalForceLongPolling: true
 });
-
 const auth = getAuth(app);
-
-// ✅ Firebase Storage
 const storage = getStorage(app);
 
 export { app, db, auth, storage };

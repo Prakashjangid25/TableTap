@@ -1,14 +1,14 @@
-import { db } from './firebase';
-import {
-  collection,
-  doc,
-  getDocs,
-  getDoc,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
+import { db } from './firebase.js';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
   orderBy,
   addDoc
 } from 'firebase/firestore';
@@ -198,7 +198,7 @@ export async function seedDatabaseIfEmpty() {
       console.log("Firestore empty. Seeding data...");
       for (const rest of SEED_RESTAURANTS) {
         await setDoc(doc(db, "restaurants", rest.id), rest);
-
+        
         // Seed categories
         const cats = SEED_CATEGORIES[rest.id] || [];
         for (const cat of cats) {

@@ -1,32 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  FiPlus,
-  FiTrash2,
-  FiEdit2,
-  FiUsers,
-  FiMap,
-  FiLayers,
-  FiDollarSign,
-  FiMove,
-  FiCheck,
-  FiX,
+import { 
+  FiPlus, 
+  FiTrash2, 
+  FiEdit2, 
+  FiUsers, 
+  FiMap, 
+  FiLayers, 
+  FiDollarSign, 
+  FiMove, 
+  FiCheck, 
+  FiX, 
   FiAlertTriangle,
   FiGrid
 } from 'react-icons/fi';
-import { ReusableBillPreviewModal } from './BillingSystem';
-import { db } from '../firebase';
-import {
-  collection,
-  doc,
-  setDoc,
-  deleteDoc,
-  updateDoc,
-  onSnapshot,
-  query,
+import { ReusableBillPreviewModal } from './BillingSystem.jsx';
+import { db } from '../firebase.js';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  updateDoc, 
+  onSnapshot, 
+  query, 
   orderBy,
   writeBatch
 } from 'firebase/firestore';
-import { useTheme } from '../contexts/ThemeContext';
+import { useTheme } from '../contexts/ThemeContext.jsx';
 
 // Error Handler conformant to firebase-integration guidelines
 const OperationType = {
@@ -50,10 +50,11 @@ function handleFirestoreError(error, operationType, path) {
 
 // Render modern blueprint top-view chairs absolute-positioned around the tables
 const renderChairs = (capacity, isOccupied) => {
-  const chairBaseCls = `absolute w-3.5 h-3.5 rounded-md border transition-all duration-300 pointer-events-none ${isOccupied
-      ? 'bg-rose-500/20 border-rose-500/60 shadow-[0_0_6px_rgba(244,63,94,0.3)] animate-pulse'
+  const chairBaseCls = `absolute w-3.5 h-3.5 rounded-md border transition-all duration-300 pointer-events-none ${
+    isOccupied 
+      ? 'bg-rose-500/20 border-rose-500/60 shadow-[0_0_6px_rgba(244,63,94,0.3)] animate-pulse' 
       : 'bg-emerald-500/10 border-emerald-500/40 shadow-[0_0_4px_rgba(16,185,129,0.15)]'
-    }`;
+  }`;
 
   let chairs = [];
   if (capacity === 2) {
@@ -105,16 +106,16 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
   const [floors, setFloors] = useState([]);
   const [activeFloorId, setActiveFloorId] = useState('');
   const [floorTables, setFloorTables] = useState([]);
-
+  
   // Bill Modal states
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
   const [billInitialItems, setBillInitialItems] = useState([]);
   const [billTableNo, setBillTableNo] = useState('');
-
+  
   // Table Details Popup & Drag/Click Detection
   const [selectedTableForPopup, setSelectedTableForPopup] = useState(null);
   const hasDraggedRef = useRef(false);
-
+  
   // Floor CRUD forms
   const [showAddFloor, setShowAddFloor] = useState(false);
   const [newFloorName, setNewFloorName] = useState('');
@@ -146,7 +147,7 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setFloors(list);
-
+      
       // Auto-select first floor if none is active
       if (list.length > 0 && !activeFloorId) {
         setActiveFloorId(list[0].id);
@@ -167,7 +168,7 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
 
     const tablesPath = `restaurants/${restaurantId}/floors/${activeFloorId}/floorTables`;
     const tablesRef = collection(db, tablesPath);
-
+    
     const unsubscribe = onSnapshot(tablesRef, (snapshot) => {
       const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setFloorTables(list);
@@ -191,7 +192,7 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
 
     const floorId = `floor_${Date.now()}`;
     const floorPath = `restaurants/${restaurantId}/floors/${floorId}`;
-
+    
     try {
       await setDoc(doc(db, 'restaurants', restaurantId, 'floors', floorId), {
         id: floorId,
@@ -233,17 +234,17 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
     try {
       // Create batch to delete floorTables first, then the floor itself
       const batch = writeBatch(db);
-
+      
       // Delete all floorTables under this floor
       for (const ft of floorTables) {
         batch.delete(doc(db, 'restaurants', restaurantId, 'floors', floorId, 'floorTables', ft.id));
       }
-
+      
       // Delete floor document
       batch.delete(doc(db, 'restaurants', restaurantId, 'floors', floorId));
-
+      
       await batch.commit();
-
+      
       // Select another floor if available
       const remainingFloors = floors.filter(f => f.id !== floorId);
       if (remainingFloors.length > 0) {
@@ -251,7 +252,7 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
       } else {
         setActiveFloorId('');
       }
-
+      
       showStatus(`Floor "${floorName}" and its tables deleted.`);
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, floorPath);
@@ -267,7 +268,7 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
     if (!physTable) return;
 
     const floorTablePath = `restaurants/${restaurantId}/floors/${activeFloorId}/floorTables/${physTable.id}`;
-
+    
     try {
       await setDoc(doc(db, 'restaurants', restaurantId, 'floors', activeFloorId, 'floorTables', physTable.id), {
         id: physTable.id,
@@ -316,8 +317,8 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
   };
 
   const handleMarkAvailable = async (tableId) => {
-    const activeOrders = orders.filter(o =>
-      o.tableId === tableId &&
+    const activeOrders = orders.filter(o => 
+      o.tableId === tableId && 
       ['pending', 'accepted', 'preparing', 'ready', 'served'].includes(o.status)
     );
 
@@ -425,8 +426,8 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
   // ── Seating Status and Billing Calculations ───────────────
   const getTableMetrics = (tableId) => {
     // 1. Get active orders for this table
-    const activeOrders = orders.filter(o =>
-      o.tableId === tableId &&
+    const activeOrders = orders.filter(o => 
+      o.tableId === tableId && 
       ['pending', 'accepted', 'preparing', 'ready', 'served'].includes(o.status)
     );
 
@@ -473,19 +474,21 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
 
   // Styles
   const cardBg = isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200/80';
-  const controlBtnCls = `p-2 rounded-xl border flex items-center justify-center transition-all cursor-pointer ${isDark
-      ? 'border-slate-800 hover:bg-slate-800 text-slate-300'
+  const controlBtnCls = `p-2 rounded-xl border flex items-center justify-center transition-all cursor-pointer ${
+    isDark 
+      ? 'border-slate-800 hover:bg-slate-800 text-slate-300' 
       : 'border-slate-200 hover:bg-slate-50 text-slate-600'
-    }`;
-
-  const formInputCls = `w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500 transition-colors ${isDark
-      ? 'bg-slate-950 border-slate-800 text-white placeholder:text-slate-600'
+  }`;
+  
+  const formInputCls = `w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500 transition-colors ${
+    isDark 
+      ? 'bg-slate-950 border-slate-800 text-white placeholder:text-slate-600' 
       : 'bg-slate-50 border-slate-200 text-slate-800'
-    }`;
+  }`;
 
   return (
     <div className="animate-fade-in space-y-6">
-
+      
       {/* Header and Add Floor Panel */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -494,16 +497,16 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
             Visually coordinate seating capacities, track real-time table occupancy, and calculate active orders.
           </p>
         </div>
-
+        
         <div className="flex flex-wrap items-center gap-3">
           {statusMessage && (
             <span className="text-xs font-semibold text-emerald-500 bg-emerald-500/10 px-3 py-1.5 rounded-lg animate-pulse">
               {statusMessage}
             </span>
           )}
-
-          <button
-            onClick={() => setShowAddFloor(!showAddFloor)}
+          
+          <button 
+            onClick={() => setShowAddFloor(!showAddFloor)} 
             className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
           >
             <FiPlus /> Add Floor
@@ -516,13 +519,13 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
         <form onSubmit={handleAddFloor} className={`p-5 rounded-2xl border max-w-md animate-fade-in space-y-3 ${cardBg}`}>
           <h3 className={`font-bold text-sm ${isDark ? 'text-white' : 'text-slate-900'}`}>Create New Restaurant Floor</h3>
           <div className="flex gap-2">
-            <input
-              type="text"
-              required
-              placeholder="e.g. Ground Floor, VIP Terrace"
-              value={newFloorName}
-              onChange={(e) => setNewFloorName(e.target.value)}
-              className={formInputCls}
+            <input 
+              type="text" 
+              required 
+              placeholder="e.g. Ground Floor, VIP Terrace" 
+              value={newFloorName} 
+              onChange={(e) => setNewFloorName(e.target.value)} 
+              className={formInputCls} 
             />
             <button type="submit" className="px-4 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all shadow shrink-0">
               Create
@@ -541,9 +544,9 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
                 <div key={fl.id} className="relative group flex items-center">
                   {editingFloorId === fl.id ? (
                     <form onSubmit={handleRenameFloor} className="flex items-center gap-1">
-                      <input
-                        type="text"
-                        value={editingFloorName}
+                      <input 
+                        type="text" 
+                        value={editingFloorName} 
                         onChange={(e) => setEditingFloorName(e.target.value)}
                         className="border rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-amber-500 bg-slate-900 text-white w-28"
                         required
@@ -556,10 +559,11 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
                     <div className="flex items-center">
                       <button
                         onClick={() => setActiveFloorId(fl.id)}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${isSelected
-                            ? 'bg-amber-500 text-slate-950 shadow'
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                          isSelected 
+                            ? 'bg-amber-500 text-slate-950 shadow' 
                             : isDark ? 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200/50'
-                          }`}
+                        }`}
                       >
                         <FiLayers className="text-sm shrink-0" />
                         <span>{fl.name}</span>
@@ -567,18 +571,18 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
 
                       {/* Hover Actions */}
                       <div className="ml-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
+                        <button 
                           onClick={() => {
                             setEditingFloorId(fl.id);
                             setEditingFloorName(fl.name);
-                          }}
+                          }} 
                           title="Rename floor"
                           className={`p-1.5 rounded-lg text-xs hover:bg-amber-500/10 hover:text-amber-500 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}
                         >
                           <FiEdit2 />
                         </button>
-                        <button
-                          onClick={() => handleDeleteFloor(fl.id, fl.name)}
+                        <button 
+                          onClick={() => handleDeleteFloor(fl.id, fl.name)} 
                           title="Delete floor"
                           className="p-1.5 rounded-lg text-xs text-rose-500 hover:bg-rose-500/10"
                         >
@@ -594,7 +598,7 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
 
           {/* Add Table trigger */}
           {activeFloorId && (
-            <button
+            <button 
               onClick={() => setShowAddTable(!showAddTable)}
               className="px-3 py-1.5 border border-dashed rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all hover:border-amber-500 hover:text-amber-500 cursor-pointer text-slate-400 border-slate-700"
             >
@@ -611,14 +615,14 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
             <h3 className={`font-bold text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>Place Physical Table on Map</h3>
             <button type="button" onClick={() => setShowAddTable(false)} className="text-slate-400 hover:text-rose-500"><FiX /></button>
           </div>
-
+          
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider mb-1.5 text-slate-400">Select Existing QR Table</label>
-              <select
+              <select 
                 required
-                value={selectedPhysicalTableId}
-                onChange={(e) => setSelectedPhysicalTableId(e.target.value)}
+                value={selectedPhysicalTableId} 
+                onChange={(e) => setSelectedPhysicalTableId(e.target.value)} 
                 className={formInputCls}
               >
                 <option value="">-- Choose Table QR --</option>
@@ -630,12 +634,12 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
                 <p className="text-[10px] text-rose-400 mt-1 flex items-center gap-1"><FiAlertTriangle /> All QR tables have already been placed!</p>
               )}
             </div>
-
+            
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider mb-1.5 text-slate-400">Seating Capacity</label>
-              <select
-                value={tableCapacity}
-                onChange={(e) => setTableCapacity(Number(e.target.value))}
+              <select 
+                value={tableCapacity} 
+                onChange={(e) => setTableCapacity(Number(e.target.value))} 
                 className={formInputCls}
               >
                 <option value="2">2 Seater</option>
@@ -664,15 +668,16 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
           </div>
 
           {/* Dotted Blueprint Grid Container */}
-          <div
+          <div 
             ref={containerRef}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerUp}
-            className={`relative w-full h-[580px] overflow-hidden rounded-2xl border border-dashed shadow-inner transition-all select-none ${isDark
-                ? 'bg-slate-950 border-slate-800 bg-[radial-gradient(rgba(245,158,11,0.08)_1px,transparent_1px)] bg-[size:24px_24px]'
+            className={`relative w-full h-[580px] overflow-hidden rounded-2xl border border-dashed shadow-inner transition-all select-none ${
+              isDark 
+                ? 'bg-slate-950 border-slate-800 bg-[radial-gradient(rgba(245,158,11,0.08)_1px,transparent_1px)] bg-[size:24px_24px]' 
                 : 'bg-slate-50 border-slate-300/80 bg-[radial-gradient(rgba(217,119,6,0.07)_1px,transparent_1px)] bg-[size:24px_24px]'
-              }`}
+            }`}
           >
             {/* Blueprint Grid Label */}
             <div className="absolute top-4 left-4 font-mono text-[10px] uppercase tracking-widest pointer-events-none select-none text-slate-500">
@@ -686,15 +691,16 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
               const isDragging = draggingTableId === tbl.id;
 
               return (
-                <div
+                <div 
                   key={tbl.id}
-                  className={`absolute group touch-none cursor-grab -translate-x-1/2 -translate-y-1/2 w-44 h-32 rounded-[32px] border transition-all duration-300 select-none ${isDragging
-                      ? 'cursor-grabbing border-amber-500 shadow-[0_25px_40px_-8px_rgba(0,0,0,0.9)] scale-105 ring-4 ring-amber-500/20 z-40'
+                  className={`absolute group touch-none cursor-grab -translate-x-1/2 -translate-y-1/2 w-44 h-32 rounded-[32px] border transition-all duration-300 select-none ${
+                    isDragging 
+                      ? 'cursor-grabbing border-amber-500 shadow-[0_25px_40px_-8px_rgba(0,0,0,0.9)] scale-105 ring-4 ring-amber-500/20 z-40' 
                       : `border-[#8a6640] bg-gradient-to-br from-[#2c1d11] via-[#3d2a19] to-[#1f130a] shadow-[0_12px_24px_-4px_rgba(0,0,0,0.6),inset_0_2px_4px_rgba(255,255,255,0.1),0_0_15px_rgba(138,102,64,0.15)] z-10 hover:shadow-[0_20px_35px_-8px_rgba(0,0,0,0.8),inset_0_2px_4px_rgba(255,255,255,0.15),0_0_20px_rgba(245,158,11,0.25)] hover:border-amber-500/80 hover:scale-[1.04] hover:z-20`
-                    }`}
-                  style={{
-                    left: `${tbl.x}%`,
-                    top: `${tbl.y}%`
+                  }`}
+                  style={{ 
+                    left: `${tbl.x}%`, 
+                    top: `${tbl.y}%` 
                   }}
                   onPointerDown={(e) => handlePointerDown(e, tbl.id, tbl.x, tbl.y)}
                 >
@@ -712,7 +718,7 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
 
                   {/* Inline Edit/Delete Controls */}
                   <div className="absolute top-2.5 right-2.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 z-30" onPointerDown={(e) => e.stopPropagation()}>
-                    <button
+                    <button 
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingTableId(tbl.id);
@@ -723,7 +729,7 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
                     >
                       <FiEdit2 className="text-[10px]" />
                     </button>
-                    <button
+                    <button 
                       onClick={(e) => {
                         e.stopPropagation();
                         handleRemoveTableFromFloor(tbl.id, tbl.tableName);
@@ -739,8 +745,8 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
                   {editingTableId === tbl.id && (
                     <div onPointerDown={(e) => e.stopPropagation()} className="absolute inset-0 bg-slate-950/95 rounded-[32px] flex flex-col justify-center items-center p-3 gap-2 z-50 animate-fade-in text-white text-xs border border-amber-500/25">
                       <span className="font-bold text-amber-400 text-[11px] uppercase tracking-wider">Set Capacity</span>
-                      <select
-                        value={editingCapacity}
+                      <select 
+                        value={editingCapacity} 
                         onChange={(e) => setEditingCapacity(Number(e.target.value))}
                         className="bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
                       >
@@ -811,7 +817,7 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
                       </div>
 
                       {/* Mark Available Button */}
-                      <button
+                      <button 
                         onPointerDown={(e) => e.stopPropagation()} // Stop drag interaction
                         onClick={(e) => {
                           e.stopPropagation();
@@ -846,8 +852,8 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
           <p className="text-sm text-slate-500 max-w-md mx-auto mb-6">
             Get started by adding floors (e.g., Ground Floor, Rooftop Lounge) to map out your physical restaurant layouts dynamically.
           </p>
-          <button
-            onClick={() => setShowAddFloor(true)}
+          <button 
+            onClick={() => setShowAddFloor(true)} 
             className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-md inline-flex items-center gap-1.5 cursor-pointer"
           >
             <FiPlus /> New Floor
@@ -860,14 +866,14 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
         const tbl = selectedTableForPopup;
         const metrics = getTableMetrics(tbl.id);
         const isOccupied = metrics.status === 'Occupied';
-
+        
         // Filter all orders (active or past) for this table
         const tableOrders = orders.filter(o => o.tableId === tbl.id);
 
         return (
           <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
             <div className={`w-full max-w-lg rounded-3xl border shadow-2xl overflow-hidden ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-
+              
               {/* Modal Header */}
               <div className={`p-6 border-b flex justify-between items-center ${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50'}`}>
                 <div>
@@ -878,7 +884,7 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
                     Real-time table coordinates & session activity logs.
                   </p>
                 </div>
-                <button
+                <button 
                   onClick={() => setSelectedTableForPopup(null)}
                   className={`p-2 rounded-xl transition-all cursor-pointer hover:text-rose-500 ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
                 >
@@ -890,7 +896,7 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
               <div className="p-6 space-y-6">
                 {/* Top Info Cards Grid */}
                 <div className="grid grid-cols-2 gap-4">
-
+                  
                   {/* Table Identification */}
                   <div className={`p-4 rounded-2xl border ${isDark ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50/50 border-slate-200'}`}>
                     <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 block mb-1">Assigned QR</span>
@@ -931,22 +937,23 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
                   <h4 className={`text-xs uppercase font-mono tracking-wider font-extrabold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                     Active Session Orders
                   </h4>
-
+                  
                   <div className={`rounded-2xl border overflow-hidden divide-y max-h-56 overflow-y-auto ${isDark ? 'bg-slate-950 border-slate-800 divide-slate-800' : 'bg-slate-50 border-slate-200 divide-slate-200'}`}>
                     {tableOrders.length > 0 ? (
                       tableOrders.map(order => {
                         const isActive = ['pending', 'accepted', 'preparing', 'ready', 'served'].includes(order.status);
-
+                        
                         return (
                           <div key={order.id} className="p-4 space-y-2 text-left">
                             <div className="flex justify-between items-center text-xs">
                               <span className="font-mono font-bold text-amber-500">{order.id}</span>
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${order.status === 'completed'
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                order.status === 'completed' 
                                   ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                                   : isActive
                                     ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse'
                                     : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
-                                }`}>
+                              }`}>
                                 {order.status}
                               </span>
                             </div>
@@ -982,8 +989,8 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
                   <button
                     onClick={() => {
                       // Gather all active orders for this table
-                      const activeOrders = orders.filter(o =>
-                        o.tableId === tbl.id &&
+                      const activeOrders = orders.filter(o => 
+                        o.tableId === tbl.id && 
                         ['pending', 'accepted', 'preparing', 'ready', 'served'].includes(o.status)
                       );
 
@@ -1032,7 +1039,7 @@ export default function FloorMapManager({ restaurantId, physicalTables, orders, 
                 )}
 
               </div>
-
+              
             </div>
           </div>
         );

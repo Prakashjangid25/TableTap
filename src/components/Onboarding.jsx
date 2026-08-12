@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  FiLayout,
-  FiCompass,
-  FiTrendingUp,
-  FiClock,
+import { 
+  FiLayout, 
+  FiCompass, 
+  FiTrendingUp, 
+  FiClock, 
   FiUserCheck,
   FiShoppingBag,
   FiChevronRight,
@@ -12,7 +12,7 @@ import {
   FiSun,
   FiMoon
 } from 'react-icons/fi';
-import { getRestaurants, getTables } from '../dbService';
+import { getRestaurants, getTables } from '../dbService.js';
 import { useTheme } from '../contexts/ThemeContext.jsx';
 
 export default function Onboarding() {
@@ -74,8 +74,8 @@ export default function Onboarding() {
     <div className={`min-h-screen ${isDark ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-900'} font-sans flex flex-col items-center justify-center p-6 md:p-12 relative overflow-hidden transition-colors duration-150`}>
       {/* Theme Toggle in top-right */}
       <div className="absolute top-6 right-6 z-20">
-        <button
-          onClick={toggleTheme}
+        <button 
+          onClick={toggleTheme} 
           className="theme-toggle flex items-center justify-center cursor-pointer shadow-md"
           title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
         >
@@ -104,9 +104,9 @@ export default function Onboarding() {
 
         {/* Roles Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-
+          
           {/* Super Admin */}
-          <div
+          <div 
             onClick={() => navigate('/super-admin')}
             className={`group cursor-pointer p-6 rounded-2xl ${isDark ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800/80' : 'bg-white border-slate-200 hover:bg-slate-50'} hover:border-emerald-500/40 border transition-all duration-300 shadow-xl flex flex-col justify-between`}
           >
@@ -127,7 +127,7 @@ export default function Onboarding() {
           </div>
 
           {/* Restaurant Admin */}
-          <div
+          <div 
             onClick={() => navigate('/admin')}
             className={`group cursor-pointer p-6 rounded-2xl ${isDark ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800/80' : 'bg-white border-slate-200 hover:bg-slate-50'} hover:border-amber-500/40 border transition-all duration-300 shadow-xl flex flex-col justify-between`}
           >
@@ -148,7 +148,7 @@ export default function Onboarding() {
           </div>
 
           {/* Kitchen Screen */}
-          <div
+          <div 
             onClick={() => navigate('/kitchen')}
             className={`group cursor-pointer p-6 rounded-2xl ${isDark ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800/80' : 'bg-white border-slate-200 hover:bg-slate-50'} hover:border-sky-500/40 border transition-all duration-300 shadow-xl flex flex-col justify-between`}
           >
@@ -169,7 +169,7 @@ export default function Onboarding() {
           </div>
 
           {/* Help & Support Center */}
-          <div
+          <div 
             onClick={() => navigate('/support')}
             className={`group cursor-pointer p-6 rounded-2xl ${isDark ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800/80' : 'bg-white border-slate-200 hover:bg-slate-50'} hover:border-rose-500/40 border transition-all duration-300 shadow-xl flex flex-col justify-between`}
           >

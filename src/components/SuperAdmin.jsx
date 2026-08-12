@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  FiHome,
-  FiUser,
+import { 
+  FiHome, 
+  FiUser, 
   FiLock,
-  FiPower,
-  FiPlus,
-  FiTrash2,
-  FiRefreshCw,
-  FiActivity,
+  FiPower, 
+  FiPlus, 
+  FiTrash2, 
+  FiRefreshCw, 
+  FiActivity, 
   FiServer,
-  FiGrid,
-  FiSettings,
-  FiCheckCircle,
+  FiGrid, 
+  FiSettings, 
+  FiCheckCircle, 
   FiXCircle,
   FiAlertTriangle,
   FiArrowLeft,
@@ -25,18 +25,18 @@ import {
   FiPhone,
   FiLayers
 } from 'react-icons/fi';
-import {
-  getRestaurants,
-  createRestaurant,
-  deleteRestaurant,
+import { 
+  getRestaurants, 
+  createRestaurant, 
+  deleteRestaurant, 
   updateRestaurant,
   getSubscriptionPlans,
   createSubscriptionPlan,
   updateSubscriptionPlan,
   deleteSubscriptionPlan
-} from '../dbService';
+} from '../dbService.js';
 import { doc, setDoc, getDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '../firebase.js';
 import { useAuth } from './AuthProvider.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
 import ImageUploader from './ImageUploader.jsx';
@@ -149,7 +149,7 @@ export default function SuperAdmin() {
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
-
+    
     if (isSignUp) {
       if (!email || !password || !securityKey) {
         setAuthError('Please fill in all fields.');
@@ -159,27 +159,27 @@ export default function SuperAdmin() {
         // Step 1: Read system/settings
         const systemSettingsRef = doc(db, 'system', 'settings');
         const systemSettingsSnap = await getDoc(systemSettingsRef);
-
+        
         if (!systemSettingsSnap.exists()) {
           setAuthError('Unable to verify Security Key. Please try again.');
           return;
         }
-
+        
         // Step 2: Read superAdminSecurityKey
         const systemData = systemSettingsSnap.data();
         const correctKey = systemData?.superAdminSecurityKey;
-
+        
         if (!correctKey) {
           setAuthError('Unable to verify Security Key. Please try again.');
           return;
         }
-
+        
         // Step 3: Compare with the Security Key entered by the user
         if (securityKey !== correctKey) {
           setAuthError('Invalid Security Key. Please contact the system owner.');
           return;
         }
-
+        
         // Key is valid! Continue the existing registration flow
         await signUpWithEmail(email, password, 'super_admin');
       } catch (err) {
@@ -304,8 +304,8 @@ export default function SuperAdmin() {
       // 1. Query users collection to find the restaurant_admin
       const usersRef = collection(db, 'users');
       const q = query(
-        usersRef,
-        where('restaurantId', '==', selectedRestForReset.id),
+        usersRef, 
+        where('restaurantId', '==', selectedRestForReset.id), 
         where('role', '==', 'restaurant_admin')
       );
       const querySnapshot = await getDocs(q);
@@ -501,20 +501,20 @@ export default function SuperAdmin() {
               Super Admin Gate
             </span>
           </div>
-
+          
           <h2 className="text-2xl font-bold font-display tracking-tight mb-2">
             {isSignUp ? 'Create Super Admin' : 'TableTap Platform Control'}
           </h2>
           <p className={`text-sm font-light mb-6 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
             {isSignUp ? 'Register a master user for platform orchestration.' : 'Sign in to access the SaaS orchestration dashboard.'}
           </p>
-
+          
           <form onSubmit={handleAuthSubmit} className="space-y-4">
             <div>
               <label className={labelCls}>Email Address</label>
               <div className="relative">
                 <FiMail className={`absolute left-3 top-3.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
-                <input
+                <input 
                   type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@tabletap.in"
                   className={`w-full ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'} border rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-emerald-500 transition-colors`}
@@ -526,7 +526,7 @@ export default function SuperAdmin() {
               <label className={labelCls}>Password</label>
               <div className="relative">
                 <FiLock className={`absolute left-3 top-3.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
-                <input
+                <input 
                   type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className={`w-full ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'} border rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-emerald-500 transition-colors`}
@@ -539,7 +539,7 @@ export default function SuperAdmin() {
                 <label className={labelCls}>Security Key</label>
                 <div className="relative">
                   <FiLock className={`absolute left-3 top-3.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
-                  <input
+                  <input 
                     type="password" value={securityKey} onChange={(e) => setSecurityKey(e.target.value)}
                     placeholder="Enter Security Key"
                     className={`w-full ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'} border rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-emerald-500 transition-colors`}
@@ -549,7 +549,7 @@ export default function SuperAdmin() {
               </div>
             )}
             {authError && <p className="text-xs text-rose-400 mt-2 flex items-center gap-1"><FiAlertTriangle /> {authError}</p>}
-            <button
+            <button 
               type="submit" disabled={authLoading}
               className="w-full bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 py-3 rounded-xl font-semibold text-sm shadow-lg transition-all cursor-pointer text-slate-950 flex items-center justify-center gap-2 disabled:opacity-50"
             >
@@ -598,7 +598,7 @@ export default function SuperAdmin() {
   // ═══════════════════════════════════════════════
   return (
     <div className={`min-h-screen font-sans flex flex-col md:flex-row ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-800'}`}>
-
+      
       {/* Sidebar */}
       <aside className={`w-full md:w-64 p-6 flex flex-col justify-between shrink-0 border-r ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
         <div>
@@ -619,10 +619,11 @@ export default function SuperAdmin() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all text-left cursor-pointer ${activeTab === tab.id
+                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all text-left cursor-pointer ${
+                  activeTab === tab.id
                     ? 'bg-emerald-500/10 text-emerald-400'
                     : isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800/50' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
+                }`}
               >
                 {tab.icon}
                 {tab.label}
@@ -950,12 +951,12 @@ export default function SuperAdmin() {
               </div>
 
               <div>
-                <ImageUploader
-                  value={newRest.logoUrl || ''}
-                  onChange={(val) => setNewRest({ ...newRest, logoUrl: val })}
-                  onUploadingStateChange={setIsUploadingLogoImg}
-                  label="Store Logo Image"
-                  isDark={isDark}
+                <ImageUploader 
+                  value={newRest.logoUrl || ''} 
+                  onChange={(val) => setNewRest({ ...newRest, logoUrl: val })} 
+                  onUploadingStateChange={setIsUploadingLogoImg} 
+                  label="Store Logo Image" 
+                  isDark={isDark} 
                 />
               </div>
 
@@ -987,9 +988,9 @@ export default function SuperAdmin() {
 
               <div className="pt-4 flex justify-end gap-3">
                 <button type="button" onClick={() => { setIsModalOpen(false); resetRestaurantForm(); }} className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}>Cancel</button>
-                <button
-                  type="submit"
-                  disabled={loading || isUploadingLogoImg}
+                <button 
+                  type="submit" 
+                  disabled={loading || isUploadingLogoImg} 
                   className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs cursor-pointer disabled:opacity-50"
                 >
                   {isUploadingLogoImg ? 'Uploading Logo...' : (loading ? 'Deploying...' : 'Confirm Deployment')}
@@ -1071,8 +1072,9 @@ export default function SuperAdmin() {
       {/* Suspend Confirmation Modal */}
       {suspendModal.isOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border transition-all ${isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-150 text-slate-900'
-            }`}>
+          <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border transition-all ${
+            isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-150 text-slate-900'
+          }`}>
             <h3 className={`text-lg font-bold font-display tracking-tight mb-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
               Suspend Restaurant
             </h3>
@@ -1083,8 +1085,9 @@ export default function SuperAdmin() {
               <button
                 type="button"
                 onClick={() => setSuspendModal({ isOpen: false, id: '', currentStatus: '' })}
-                className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                  }`}
+                className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${
+                  isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
               >
                 Cancel
               </button>
@@ -1103,8 +1106,9 @@ export default function SuperAdmin() {
       {/* Reset Password Modal */}
       {isResetPasswordOpen && selectedRestForReset && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border transition-all ${isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-150 text-slate-900'
-            }`}>
+          <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border transition-all ${
+            isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-150 text-slate-900'
+          }`}>
             {!resetSuccess ? (
               <>
                 <h3 className={`text-lg font-bold font-display tracking-tight mb-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
@@ -1121,20 +1125,22 @@ export default function SuperAdmin() {
                       <button
                         type="button"
                         onClick={() => setResetOption('auto')}
-                        className={`p-3 rounded-xl border text-xs font-bold text-center cursor-pointer transition-all ${resetOption === 'auto'
+                        className={`p-3 rounded-xl border text-xs font-bold text-center cursor-pointer transition-all ${
+                          resetOption === 'auto'
                             ? 'bg-amber-500/10 border-amber-500 text-amber-500'
                             : isDark ? 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                          }`}
+                        }`}
                       >
                         Auto-Generate
                       </button>
                       <button
                         type="button"
                         onClick={() => setResetOption('manual')}
-                        className={`p-3 rounded-xl border text-xs font-bold text-center cursor-pointer transition-all ${resetOption === 'manual'
+                        className={`p-3 rounded-xl border text-xs font-bold text-center cursor-pointer transition-all ${
+                          resetOption === 'manual'
                             ? 'bg-amber-500/10 border-amber-500 text-amber-500'
                             : isDark ? 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                          }`}
+                        }`}
                       >
                         Manual Entry
                       </button>
@@ -1150,8 +1156,9 @@ export default function SuperAdmin() {
                         value={manualPasswordInput}
                         onChange={(e) => setManualPasswordInput(e.target.value)}
                         placeholder="Minimum 6 characters"
-                        className={`w-full px-3.5 py-2 text-sm rounded-xl border focus:outline-none focus:border-amber-500 transition-all ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
-                          }`}
+                        className={`w-full px-3.5 py-2 text-sm rounded-xl border focus:outline-none focus:border-amber-500 transition-all ${
+                          isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
+                        }`}
                       />
                     </div>
                   )}
@@ -1171,8 +1178,9 @@ export default function SuperAdmin() {
                         setSelectedRestForReset(null);
                         setResetError('');
                       }}
-                      className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                        }`}
+                      className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${
+                        isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                      }`}
                     >
                       Cancel
                     </button>
@@ -1198,8 +1206,9 @@ export default function SuperAdmin() {
                   Share this temporary password with the restaurant admin so they can secure their account.
                 </p>
 
-                <div className={`p-4 rounded-xl border mb-6 text-center transition-all ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-                  }`}>
+                <div className={`p-4 rounded-xl border mb-6 text-center transition-all ${
+                  isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}>
                   <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Temporary Password</p>
                   <p className="text-lg font-black font-mono tracking-wide text-amber-500 select-all">
                     {generatedPassword}
@@ -1214,10 +1223,11 @@ export default function SuperAdmin() {
                       setCopySuccess(true);
                       setTimeout(() => setCopySuccess(false), 2000);
                     }}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${copySuccess
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      copySuccess
                         ? 'bg-emerald-500 text-white'
                         : isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                      }`}
+                    }`}
                   >
                     {copySuccess ? 'Copied!' : 'Copy Password'}
                   </button>

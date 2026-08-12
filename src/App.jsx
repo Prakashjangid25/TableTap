@@ -6,7 +6,7 @@ import RestaurantAdmin from './components/RestaurantAdmin.jsx';
 import KitchenPanel from './components/KitchenPanel.jsx';
 import CustomerMenu from './components/CustomerMenu.jsx';
 import SupportCenter from './components/SupportCenter.jsx';
-import { seedDatabaseIfEmpty } from './dbService';
+import { seedDatabaseIfEmpty } from './dbService.js';
 
 export default function App() {
   useEffect(() => {

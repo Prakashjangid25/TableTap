@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import {
-  FiClock,
-  FiCheckCircle,
-  FiVolume2,
-  FiVolumeX,
-  FiPlay,
+import { 
+  FiClock, 
+  FiCheckCircle, 
+  FiVolume2, 
+  FiVolumeX, 
+  FiPlay, 
   FiChevronLeft,
   FiShoppingBag,
   FiBell,
   FiCheck,
   FiCoffee
 } from 'react-icons/fi';
-import { getOrders, updateOrderStatus, getRestaurants } from '../dbService';
-import { db } from '../firebase';
+import { getOrders, updateOrderStatus, getRestaurants } from '../dbService.js';
+import { db } from '../firebase.js';
 import { collection, query, getDocs, getDoc, doc, updateDoc } from 'firebase/firestore';
 
 export default function KitchenPanel() {
@@ -22,7 +22,7 @@ export default function KitchenPanel() {
   const [selectedRestId, setSelectedRestId] = useState('');
   const [restaurants, setRestaurants] = useState([]);
   const [currentRest, setCurrentRest] = useState(null);
-
+  
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -50,7 +50,7 @@ export default function KitchenPanel() {
         const stored = localStorage.getItem('kds_session');
         if (stored) {
           const session = JSON.parse(stored);
-
+          
           // Verify restaurant is not suspended
           const restDocSnap = await getDoc(doc(db, "restaurants", session.restaurantId));
           if (restDocSnap.exists() && restDocSnap.data().status === 'suspended') {
@@ -214,7 +214,7 @@ export default function KitchenPanel() {
         const accessColRef = collection(db, "restaurants", rest.id, "kitchenAccess");
         const q = query(accessColRef);
         const querySnapshot = await getDocs(q);
-
+        
         const accessList = querySnapshot.docs.map(doc => doc.data());
         const found = accessList.find(acc => acc.accessKey === keyToSearch && acc.pin === pinToSearch);
         if (found) {
@@ -302,8 +302,8 @@ export default function KitchenPanel() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Kitchen Access Key</label>
-              <input
-                type="text"
+              <input 
+                type="text" 
                 required
                 placeholder="e.g. KDS-ABC123"
                 value={accessKeyInput}
@@ -314,8 +314,8 @@ export default function KitchenPanel() {
 
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Kitchen PIN</label>
-              <input
-                type="password"
+              <input 
+                type="password" 
                 required
                 placeholder="••••"
                 maxLength={6}
@@ -331,7 +331,7 @@ export default function KitchenPanel() {
               </p>
             )}
 
-            <button
+            <button 
               type="submit"
               disabled={loginLoading}
               className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-bold py-3.5 rounded-xl text-sm transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
@@ -348,8 +348,8 @@ export default function KitchenPanel() {
           </form>
 
           <div className="text-center">
-            <button
-              onClick={() => navigate('/')}
+            <button 
+              onClick={() => navigate('/')} 
               className="text-xs text-slate-500 hover:text-slate-300 font-medium transition-colors"
             >
               ← Back to Platform Landing
@@ -362,12 +362,12 @@ export default function KitchenPanel() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col">
-
+      
       {/* Top Navigation */}
       <header className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate('/')}
+          <button 
+            onClick={() => navigate('/')} 
             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
             title="Return to Launchpad"
           >
@@ -398,21 +398,22 @@ export default function KitchenPanel() {
             </div>
           )}
 
-          <button
+          <button 
             onClick={() => {
               setSoundEnabled(!soundEnabled);
               if (!soundEnabled) triggerChime();
             }}
-            className={`p-2 rounded-lg border text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${soundEnabled
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+            className={`p-2 rounded-lg border text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+              soundEnabled 
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
                 : 'bg-slate-800 text-slate-400 border-slate-700'
-              }`}
+            }`}
           >
             {soundEnabled ? <FiVolume2 className="text-base" /> : <FiVolumeX className="text-base" />}
             <span>{soundEnabled ? 'Chime Active' : 'Chime Off'}</span>
           </button>
 
-          <button
+          <button 
             onClick={handleLogout}
             className="p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
           >
@@ -423,7 +424,7 @@ export default function KitchenPanel() {
 
       {/* Main Kanban Content Area */}
       <main className="flex-1 p-6 overflow-x-auto select-none">
-
+        
         {/* Incoming queue banner if pending exist */}
         {pendingOrders.length > 0 && (
           <div className="bg-amber-500 text-slate-950 px-6 py-3 rounded-2xl mb-8 flex justify-between items-center shadow-lg">
@@ -435,7 +436,7 @@ export default function KitchenPanel() {
             </div>
             <div className="flex gap-2">
               {pendingOrders.map(order => (
-                <button
+                <button 
                   key={order.id}
                   onClick={() => handleUpdateStatus(order.id, 'preparing')}
                   className="px-3 py-1 bg-slate-950 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
@@ -448,7 +449,7 @@ export default function KitchenPanel() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-[500px]">
-
+          
           {/* COLUMN 1: PREPARING (UNDER COOKING) */}
           <div className="rounded-2xl bg-slate-900/40 border border-slate-800 p-4 flex flex-col h-full">
             <div className="flex justify-between items-center pb-3 border-b border-slate-800 mb-4">
@@ -464,7 +465,7 @@ export default function KitchenPanel() {
             <div className="space-y-4 flex-1 overflow-y-auto max-h-[600px] pr-1">
               {preparingOrders.map(order => (
                 <div key={order.id} className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-4 shadow hover:border-indigo-500/50 transition-colors animate-fade-in">
-
+                  
                   {/* Card Header details */}
                   <div className="flex justify-between items-start">
                     <div>
@@ -498,7 +499,7 @@ export default function KitchenPanel() {
                   )}
 
                   {/* Actions */}
-                  <button
+                  <button 
                     onClick={() => handleUpdateStatus(order.id, 'ready')}
                     className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
                   >
@@ -531,7 +532,7 @@ export default function KitchenPanel() {
             <div className="space-y-4 flex-1 overflow-y-auto max-h-[600px] pr-1">
               {readyOrders.map(order => (
                 <div key={order.id} className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-4 shadow hover:border-pink-500/50 transition-colors animate-fade-in">
-
+                  
                   {/* Card Header */}
                   <div className="flex justify-between items-start">
                     <div>
@@ -553,7 +554,7 @@ export default function KitchenPanel() {
                     ))}
                   </div>
 
-                  <button
+                  <button 
                     onClick={() => handleUpdateStatus(order.id, 'completed')}
                     className="w-full py-2 bg-pink-600 hover:bg-pink-500 active:bg-pink-700 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
                   >
@@ -586,7 +587,7 @@ export default function KitchenPanel() {
             <div className="space-y-4 flex-1 overflow-y-auto max-h-[600px] pr-1">
               {completedOrders.map(order => (
                 <div key={order.id} className="p-4 rounded-xl bg-slate-900/50 border border-slate-800/80 text-slate-400 space-y-3 animate-fade-in">
-
+                  
                   <div className="flex justify-between items-center">
                     <div>
                       <h4 className="font-bold font-display text-slate-300">{order.tableName || 'Table'}</h4>
