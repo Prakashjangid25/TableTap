@@ -84,6 +84,14 @@ export default function RestaurantAdmin() {
   const [ordersDateFilter, setOrdersDateFilter] = useState('today');
   const [isOrdersFilterDropdownOpen, setIsOrdersFilterDropdownOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState(null);
+  const [expandedOrderIds, setExpandedOrderIds] = useState({});
+
+  const toggleExpandOrder = (orderId) => {
+    setExpandedOrderIds(prev => ({
+      ...prev,
+      [orderId]: !prev[orderId]
+    }));
+  };
 
   // Export & Delete states
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -1804,13 +1812,19 @@ export default function RestaurantAdmin() {
                   </thead>
                   <tbody className={`divide-y ${isDark ? 'divide-slate-800 text-slate-300' : 'divide-slate-100 text-slate-700'}`}>
                     {filteredOrdersForDisplay.map(order => {
-                      const itemSummary = order.items.map(i => `${i.name} x${i.quantity}`).join(', ');
+                      const totalItemsCount = order.items ? order.items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0) : 0;
+                      const uniqueItemsCount = order.items ? order.items.length : 0;
+                      const isExpanded = expandedOrderIds[order.id];
+                      const MAX_DEFAULT_VISIBLE = 5;
+                      const hasManyItems = uniqueItemsCount > MAX_DEFAULT_VISIBLE;
+                      const visibleItems = (hasManyItems && !isExpanded) ? order.items.slice(0, MAX_DEFAULT_VISIBLE) : (order.items || []);
+
                       return (
-                        <tr key={order.id} className={`transition-colors ${isDark ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50/50'}`}>
-                          <td className="px-6 py-4">
+                        <tr key={order.id} className={`align-top transition-colors ${isDark ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50/50'}`}>
+                          <td className="px-6 py-4 align-top">
                             <span className={`font-mono font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>{order.id}</span>
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 align-top">
                             {(() => {
                               const { date, time } = formatOrderDateTime(order.createdAt);
                               return (
@@ -1821,15 +1835,53 @@ export default function RestaurantAdmin() {
                               );
                             })()}
                           </td>
-                          <td className={`px-6 py-4 font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{order.tableName || 'Table'}</td>
-                          <td className="px-6 py-4 max-w-sm">
-                            <p className={`truncate text-xs font-medium ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{itemSummary}</p>
-                            {order.notes && <p className="text-[10px] text-rose-500 font-medium truncate mt-0.5">Note: {order.notes}</p>}
+                          <td className={`px-6 py-4 align-top font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{order.tableName || 'Table'}</td>
+                          <td className="px-6 py-4 align-top min-w-[220px] max-w-sm whitespace-normal">
+                            <div className="space-y-1.5">
+                              {visibleItems.length > 0 ? (
+                                <div className="space-y-1 divide-y divide-slate-100 dark:divide-slate-800/60">
+                                  {visibleItems.map((it, idx) => (
+                                    <div key={idx} className={`flex items-start justify-between gap-2 text-xs leading-snug ${idx > 0 ? 'pt-1' : ''}`}>
+                                      <span className={`font-medium break-words ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                                        {it.name}
+                                      </span>
+                                      <span className={`font-bold shrink-0 text-[11px] px-1.5 py-0.5 rounded ${isDark ? 'bg-slate-800 text-amber-400 border border-slate-700' : 'bg-amber-50 text-amber-800 border border-amber-200/60'
+                                        }`}>
+                                        x{it.quantity}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-slate-400 italic">No items</span>
+                              )}
+
+                              {hasManyItems && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpandOrder(order.id)}
+                                  className={`mt-1.5 text-xs font-semibold hover:underline flex items-center gap-1 cursor-pointer ${isDark ? 'text-amber-400 hover:text-amber-300' : 'text-amber-600 hover:text-amber-700'
+                                    }`}
+                                >
+                                  {isExpanded ? (
+                                    <>Show less ↑</>
+                                  ) : (
+                                    <>+ View all {uniqueItemsCount} items ({uniqueItemsCount - MAX_DEFAULT_VISIBLE} more) ↓</>
+                                  )}
+                                </button>
+                              )}
+
+                              {order.notes && (
+                                <p className="text-[11px] text-rose-500 font-medium break-words mt-1.5 pt-1 border-t border-rose-500/20">
+                                  Note: {order.notes}
+                                </p>
+                              )}
+                            </div>
                           </td>
-                          <td className={`px-6 py-4 font-mono font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                          <td className={`px-6 py-4 align-top font-mono font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
                             ₹{(order.grandTotal || order.totalAmount || 0).toFixed(2)}
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 align-top">
                             <span className={`inline-flex items-center gap-0.5 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${order.status === 'pending' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
                                 order.status === 'accepted' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
                                   order.status === 'preparing' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' :
@@ -1841,7 +1893,7 @@ export default function RestaurantAdmin() {
                               {order.status}
                             </span>
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 align-top">
                             <select value={order.status} onChange={(e) => handleUpdateStatus(order.id, e.target.value)} className={`border rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none focus:border-amber-500 ${isDark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
                               <option value="pending">Pending</option>
                               <option value="accepted">Accepted</option>
@@ -1852,7 +1904,7 @@ export default function RestaurantAdmin() {
                               <option value="cancelled">Cancelled</option>
                             </select>
                           </td>
-                          <td className="px-6 py-4 text-right">
+                          <td className="px-6 py-4 align-top text-right">
                             <button
                               onClick={() => setOrderToDelete(order)}
                               className="p-2 rounded-xl bg-rose-500/10 text-rose-500 hover:text-white hover:bg-rose-500 transition-all cursor-pointer inline-flex items-center justify-center border border-rose-500/20"
