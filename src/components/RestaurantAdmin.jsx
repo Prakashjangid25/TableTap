@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
-import { 
-  FiHome, 
-  FiFolder, 
-  FiGrid, 
-  FiFileText, 
-  FiTag, 
-  FiSettings, 
-  FiPower, 
-  FiPlus, 
-  FiTrash2, 
-  FiShoppingBag, 
+import {
+  FiHome,
+  FiFolder,
+  FiGrid,
+  FiFileText,
+  FiTag,
+  FiSettings,
+  FiPower,
+  FiPlus,
+  FiTrash2,
+  FiShoppingBag,
   FiCoffee,
   FiLock,
   FiMail,
@@ -37,22 +37,23 @@ import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc, updateD
 import QRPrintSystem from './QRPrintSystem.jsx';
 import ImageUploader from './ImageUploader.jsx';
 import MenuImporter from './MenuImporter.jsx';
-import { 
-  getRestaurants, 
-  getCategories, 
-  createCategory, 
-  deleteCategory, 
-  getProducts, 
-  createProduct, 
-  updateProduct, 
-  deleteProduct, 
-  getTables, 
-  createTable, 
-  deleteTable, 
-  getCoupons, 
-  createCoupon, 
-  deleteCoupon, 
-  getOrders, 
+import { executePrint } from '../utils/printSystem.js';
+import {
+  getRestaurants,
+  getCategories,
+  createCategory,
+  deleteCategory,
+  getProducts,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  getTables,
+  createTable,
+  deleteTable,
+  getCoupons,
+  createCoupon,
+  deleteCoupon,
+  getOrders,
   updateOrderStatus,
   updateRestaurant
 } from '../dbService.js';
@@ -85,6 +86,252 @@ export default function RestaurantAdmin() {
   const [isOrdersFilterDropdownOpen, setIsOrdersFilterDropdownOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState(null);
   const [expandedOrderIds, setExpandedOrderIds] = useState({});
+  const [viewBillOrder, setViewBillOrder] = useState(null);
+  const [billModalPrintLayout, setBillModalPrintLayout] = useState('80mm');
+
+  useEffect(() => {
+    if (currentRest?.printLayout) {
+      setBillModalPrintLayout(currentRest.printLayout);
+    }
+  }, [currentRest]);
+
+  const getBillDataFromOrder = (order) => {
+    if (!order) return null;
+
+    const items = (order.items || []).map(it => {
+      const qty = Number(it.quantity) || 1;
+      const price = Number(it.price || it.unitPrice || 0);
+      const subtotal = Number(it.subtotal !== undefined ? it.subtotal : (price * qty));
+      return {
+        id: it.id || it.productId || Math.random().toString(),
+        name: it.name || 'Item',
+        quantity: qty,
+        price: price,
+        subtotal: subtotal
+      };
+    });
+
+    const calculatedItemsSubtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+    const subtotal = Number(
+      order.subtotal !== undefined
+        ? order.subtotal
+        : (order.totalAmount !== undefined ? order.totalAmount : calculatedItemsSubtotal)
+    );
+
+    const discount = Number(order.discountAmount || order.discount || order.couponDiscount || 0);
+    const taxAmount = Number(order.taxAmount || order.gstAmount || order.tax || 0);
+    const taxRate = Number(order.taxRate || order.gstRate || currentRest?.taxRate || 5);
+    const serviceChargeAmount = Number(order.serviceChargeAmount || order.serviceCharge || 0);
+    const serviceChargeRate = Number(order.serviceChargeRate || 5);
+
+    const grandTotal = Number(
+      order.grandTotal !== undefined
+        ? order.grandTotal
+        : (order.totalAmount !== undefined && order.totalAmount > 0)
+          ? order.totalAmount
+          : Math.max(0, subtotal - discount + taxAmount + serviceChargeAmount)
+    );
+
+    const { date, time } = formatOrderDateTime(order.createdAt);
+    const orderType = order.orderType || order.type || (order.tableName ? 'Dine In' : 'Takeaway');
+    const isTakeaway = ['takeaway', 'parcel', 'delivery', 'pickup'].includes(String(orderType).toLowerCase());
+    const tableName = (!isTakeaway && (order.tableName || order.tableNumber || order.tableId))
+      ? (order.tableName || order.tableNumber || `Table ${order.tableId}`)
+      : null;
+
+    return {
+      billNumber: order.billNumber || order.invoiceNo || order.id || 'ED-1001',
+      orderId: order.id,
+      orderType,
+      tableName,
+      items,
+      subtotal,
+      discount,
+      couponCode: order.couponCode || null,
+      taxAmount,
+      taxRate,
+      gstEnabled: taxAmount > 0,
+      serviceChargeAmount,
+      serviceChargeRate,
+      serviceChargeEnabled: serviceChargeAmount > 0,
+      grandTotal,
+      status: order.status || 'pending',
+      paymentStatus: order.paymentStatus || (['served', 'completed', 'paid'].includes(order.status) ? 'Paid' : 'Pending'),
+      paymentMethod: order.paymentMethod || 'Cash / UPI',
+      date,
+      time,
+      notes: order.notes || ''
+    };
+  };
+
+  const handlePrintBillFromModal = (billData, overrideLayout = null) => {
+    if (!billData) return;
+    const layout = overrideLayout || billModalPrintLayout || currentRest?.printLayout || '80mm';
+    executePrint({
+      billNumber: billData.billNumber,
+      orderType: billData.orderType,
+      tableNumber: billData.tableName,
+      items: billData.items,
+      subtotal: billData.subtotal,
+      discount: billData.discount,
+      gstEnabled: billData.taxAmount > 0,
+      gstRate: billData.taxRate,
+      gstAmount: billData.taxAmount,
+      serviceChargeEnabled: billData.serviceChargeAmount > 0,
+      serviceChargeRate: billData.serviceChargeRate,
+      serviceChargeAmount: billData.serviceChargeAmount,
+      grandTotal: billData.grandTotal,
+      date: billData.date,
+      time: billData.time
+    }, currentRest, layout);
+  };
+
+  const handleDownloadPDFFromModal = (billData) => {
+    if (!billData) return;
+    try {
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      doc.setFont('helvetica', 'normal');
+
+      doc.setDrawColor(220, 220, 220);
+      doc.setLineWidth(0.5);
+      doc.line(10, 10, 200, 10);
+
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(245, 158, 11);
+      doc.text(currentRest?.name || 'EASYDINE RESTAURANT', 15, 22);
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 100, 100);
+      let restY = 27;
+      if (currentRest?.address) {
+        doc.text(String(currentRest.address), 15, restY);
+        restY += 5;
+      }
+      if (currentRest?.contact || currentRest?.phone) {
+        doc.text(`Contact: ${currentRest.contact || currentRest.phone}`, 15, restY);
+        restY += 5;
+      }
+      if (currentRest?.gstin) {
+        doc.text(`GSTIN: ${currentRest.gstin}`, 15, restY);
+        restY += 5;
+      }
+
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 41, 59);
+      doc.text("TAX INVOICE", 135, 22);
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(80, 80, 80);
+      doc.text(`Bill No: ${billData.billNumber}`, 135, 27);
+      doc.text(`Order ID: ${billData.orderId}`, 135, 32);
+      doc.text(`Date: ${billData.date} ${billData.time}`, 135, 37);
+      doc.text(`Type: ${billData.orderType}`, 135, 42);
+      if (billData.tableName) {
+        doc.text(`Table: ${billData.tableName}`, 135, 47);
+      }
+
+      const startTableY = Math.max(restY + 4, billData.tableName ? 52 : 47);
+      doc.line(10, startTableY, 200, startTableY);
+
+      let y = startTableY + 8;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(30, 41, 59);
+      doc.text("Item Name", 15, y);
+      doc.text("Price", 110, y, { align: "right" });
+      doc.text("Qty", 140, y, { align: "right" });
+      doc.text("Total", 185, y, { align: "right" });
+
+      doc.line(10, y + 3, 200, y + 3);
+      y += 9;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(60, 60, 60);
+
+      billData.items.forEach((item) => {
+        const name = item.name.length > 45 ? item.name.substring(0, 42) + '...' : item.name;
+        doc.text(name, 15, y);
+        doc.text(`Rs. ${Number(item.price).toFixed(2)}`, 110, y, { align: "right" });
+        doc.text(String(item.quantity), 140, y, { align: "right" });
+        doc.text(`Rs. ${Number(item.subtotal).toFixed(2)}`, 185, y, { align: "right" });
+        y += 7;
+      });
+
+      doc.line(10, y, 200, y);
+      y += 7;
+
+      const summaryX = 135;
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      doc.text("Subtotal:", summaryX, y);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Rs. ${billData.subtotal.toFixed(2)}`, 185, y, { align: "right" });
+      y += 6;
+
+      if (billData.discount > 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(16, 185, 129);
+        doc.text(`Discount ${billData.couponCode ? `(${billData.couponCode})` : ''}:`, summaryX, y);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`-Rs. ${billData.discount.toFixed(2)}`, 185, y, { align: "right" });
+        y += 6;
+        doc.setTextColor(100, 100, 100);
+      }
+
+      if (billData.taxAmount > 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.text(`GST (${billData.taxRate}%):`, summaryX, y);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Rs. ${billData.taxAmount.toFixed(2)}`, 185, y, { align: "right" });
+        y += 6;
+      }
+
+      if (billData.serviceChargeAmount > 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Service Charge (${billData.serviceChargeRate}%):`, summaryX, y);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Rs. ${billData.serviceChargeAmount.toFixed(2)}`, 185, y, { align: "right" });
+        y += 6;
+      }
+
+      doc.line(125, y, 200, y);
+      y += 7;
+
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(245, 158, 11);
+      doc.text("GRAND TOTAL:", summaryX, y);
+      doc.text(`Rs. ${billData.grandTotal.toFixed(2)}`, 185, y, { align: "right" });
+
+      y += 15;
+      doc.setDrawColor(240, 240, 240);
+      doc.line(10, y, 200, y);
+
+      y += 7;
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(9);
+      doc.setTextColor(140, 140, 140);
+      doc.text("Thank you for your business! Please visit again.", 105, y, { align: "center" });
+
+      if (currentRest?.showPoweredBy) {
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(160, 160, 160);
+        doc.text("Powered by EasyDine", 105, y, { align: "center" });
+      }
+
+      doc.save(`Invoice_${billData.billNumber}.pdf`);
+    } catch (err) {
+      console.error("PDF generation error: ", err);
+      alert("Failed to download PDF bill.");
+    }
+  };
 
   const toggleExpandOrder = (orderId) => {
     setExpandedOrderIds(prev => ({
@@ -141,7 +388,7 @@ export default function RestaurantAdmin() {
   // Modals / Creators Form State
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCatName, setNewCatName] = useState('');
-  
+
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [newProd, setNewProd] = useState({
     name: '', description: '', price: '', categoryId: '',
@@ -150,7 +397,7 @@ export default function RestaurantAdmin() {
 
   const [showAddTable, setShowAddTable] = useState(false);
   const [newTableName, setNewTableName] = useState('');
-  
+
   // Print QR modal state
   const [printTable, setPrintTable] = useState(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
@@ -331,7 +578,7 @@ export default function RestaurantAdmin() {
       const AudioContext = window.AudioContext || window.webkitAudioContext;
       if (!AudioContext) return;
       const ctx = new AudioContext();
-      
+
       // Dual-note chime (E5 -> A5)
       const osc1 = ctx.createOscillator();
       const gain1 = ctx.createGain();
@@ -339,7 +586,7 @@ export default function RestaurantAdmin() {
       osc1.frequency.setValueAtTime(659.25, ctx.currentTime); // E5
       gain1.gain.setValueAtTime(0.15, ctx.currentTime);
       gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-      
+
       osc1.connect(gain1);
       gain1.connect(ctx.destination);
       osc1.start();
@@ -353,7 +600,7 @@ export default function RestaurantAdmin() {
           osc2.frequency.setValueAtTime(880, ctx.currentTime); // A5
           gain2.gain.setValueAtTime(0.15, ctx.currentTime);
           gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-          
+
           osc2.connect(gain2);
           gain2.connect(ctx.destination);
           osc2.start();
@@ -375,7 +622,7 @@ export default function RestaurantAdmin() {
     const unsubscribe = onSnapshot(restDocRef, async (docSnap) => {
       if (docSnap.exists()) {
         const r = { id: docSnap.id, ...docSnap.data() };
-        
+
         if (r.status === 'suspended') {
           if (wasActive.current) {
             // Real-time suspension: log out and clear session immediately
@@ -765,12 +1012,12 @@ export default function RestaurantAdmin() {
       try {
         const docPDF = new jsPDF('p', 'mm', 'a4');
         docPDF.setFont("helvetica", "normal");
-        
+
         // Title
         docPDF.setFontSize(18);
         docPDF.setTextColor(30, 41, 59);
         docPDF.text("MONTHLY ORDERS REPORT", 14, 20);
-        
+
         // Meta Information
         docPDF.setFontSize(10);
         docPDF.setTextColor(100, 116, 139);
@@ -778,11 +1025,11 @@ export default function RestaurantAdmin() {
         docPDF.text(`Address: ${currentRest?.address || 'N/A'}`, 14, 34);
         docPDF.text(`Period: ${selectedMonthLabel}`, 14, 40);
         docPDF.text(`Exported On: ${new Date().toLocaleDateString()}`, 14, 46);
-        
+
         // Horizontal Rule
         docPDF.setDrawColor(226, 232, 240);
         docPDF.line(14, 52, 196, 52);
-        
+
         // Table Header
         docPDF.setFontSize(9);
         docPDF.setFont("helvetica", "bold");
@@ -793,11 +1040,11 @@ export default function RestaurantAdmin() {
         docPDF.text("Items & Qty", 90, 60);
         docPDF.text("Total", 160, 60);
         docPDF.text("Status", 180, 60);
-        
+
         docPDF.line(14, 64, 196, 64);
         docPDF.setFont("helvetica", "normal");
         docPDF.setTextColor(51, 65, 85);
-        
+
         let y = 70;
         ordersForMonth.forEach((o) => {
           if (y > 275) {
@@ -814,25 +1061,25 @@ export default function RestaurantAdmin() {
             docPDF.setFont("helvetica", "normal");
             y += 10;
           }
-          
+
           const { date, time } = formatOrderDateTime(o.createdAt);
           const tableNo = o.tableName || 'Table';
           const totalStr = `INR ${(o.grandTotal || o.totalAmount || 0).toFixed(0)}`;
           const statusStr = o.status || 'Pending';
-          
+
           const itemsStr = o.items.map(i => `${i.name} (x${i.quantity})`).join(', ');
           const itemText = itemsStr.length > 38 ? itemsStr.substring(0, 35) + '...' : itemsStr;
-          
+
           docPDF.text(o.id.substring(0, 10), 14, y);
           docPDF.text(`${date} ${time}`, 35, y);
           docPDF.text(tableNo, 70, y);
           docPDF.text(itemText, 90, y);
           docPDF.text(totalStr, 160, y);
           docPDF.text(statusStr, 180, y);
-          
+
           y += 8;
         });
-        
+
         docPDF.save(`Orders_${selectedMonthLabel.replace(/\s+/g, '_')}.pdf`);
       } catch (err) {
         console.error("Error generating PDF: ", err);
@@ -881,10 +1128,10 @@ export default function RestaurantAdmin() {
               </thead>
               <tbody>
                 ${ordersForMonth.map(o => {
-                  const { date, time } = formatOrderDateTime(o.createdAt);
-                  const itemNames = o.items.map(i => i.name).join(', ');
-                  const itemQuantities = o.items.map(i => i.quantity).join(', ');
-                  return `
+          const { date, time } = formatOrderDateTime(o.createdAt);
+          const itemNames = o.items.map(i => i.name).join(', ');
+          const itemQuantities = o.items.map(i => i.quantity).join(', ');
+          return `
                     <tr>
                       <td>${o.id}</td>
                       <td>${date}</td>
@@ -897,13 +1144,13 @@ export default function RestaurantAdmin() {
                       <td>${o.status}</td>
                     </tr>
                   `;
-                }).join('')}
+        }).join('')}
               </tbody>
             </table>
           </body>
           </html>
         `;
-        
+
         const blob = new Blob([excelTemplate], { type: 'application/vnd.ms-excel;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -928,7 +1175,7 @@ export default function RestaurantAdmin() {
           `Export Date,${new Date().toLocaleDateString()}`,
           ``,
         ];
-        
+
         const headers = ["Order ID", "Date", "Time", "Table Number", "Items", "Quantity", "Total Amount (INR)", "Payment Status", "Order Status"];
         const rows = ordersForMonth.map(o => {
           const { date, time } = formatOrderDateTime(o.createdAt);
@@ -947,7 +1194,7 @@ export default function RestaurantAdmin() {
             o.status
           ];
         });
-        
+
         const csvContent = [...metadata, headers.join(','), ...rows.map(r => r.join(','))].join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -981,7 +1228,7 @@ export default function RestaurantAdmin() {
       await Promise.all(deletePromises);
       setAdminSuccessToast(`Successfully deleted ${ordersForMonth.length} exported orders.`);
       setTimeout(() => setAdminSuccessToast(''), 3000);
-      
+
       // Close modal and reset states
       setIsExportModalOpen(false);
       setSelectedExportMonth('');
@@ -1042,7 +1289,7 @@ export default function RestaurantAdmin() {
       return orderDate.toDateString() === now.toDateString();
     } else if (dateFilter === 'month') {
       return orderDate.getMonth() === now.getMonth() &&
-             orderDate.getFullYear() === now.getFullYear();
+        orderDate.getFullYear() === now.getFullYear();
     } else if (dateFilter === 'year') {
       return orderDate.getFullYear() === now.getFullYear();
     }
@@ -1060,7 +1307,7 @@ export default function RestaurantAdmin() {
       return orderDate.toDateString() === now.toDateString();
     } else if (ordersDateFilter === 'month') {
       return orderDate.getMonth() === now.getMonth() &&
-             orderDate.getFullYear() === now.getFullYear();
+        orderDate.getFullYear() === now.getFullYear();
     } else if (ordersDateFilter === 'year') {
       return orderDate.getFullYear() === now.getFullYear();
     }
@@ -1112,7 +1359,7 @@ export default function RestaurantAdmin() {
               <label className={labelCls}>Email Address</label>
               <div className="relative">
                 <FiMail className={`absolute left-3.5 top-3.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
-                <input 
+                <input
                   type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                   placeholder="manager@restaurant.com"
                   className={`w-full border rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-amber-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
@@ -1124,7 +1371,7 @@ export default function RestaurantAdmin() {
               <label className={labelCls}>Password</label>
               <div className="relative">
                 <FiLock className={`absolute left-3.5 top-3.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
-                <input 
+                <input
                   type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className={`w-full border rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-amber-500 ${isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
@@ -1133,7 +1380,7 @@ export default function RestaurantAdmin() {
               </div>
               {authError && <p className="text-xs text-rose-500 mt-2 flex items-center gap-1"><FiAlertTriangle /> {authError}</p>}
             </div>
-            <button 
+            <button
               type="submit" disabled={authLoading}
               className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-semibold py-3 rounded-xl text-sm shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
             >
@@ -1155,9 +1402,8 @@ export default function RestaurantAdmin() {
   if (isSuspended) {
     return (
       <div className={`min-h-screen font-sans flex items-center justify-center p-4 ${isDark ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-800'}`}>
-        <div className={`w-full max-w-md p-8 rounded-2xl border shadow-2xl text-center animate-fade-in ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200/80'
-        }`}>
+        <div className={`w-full max-w-md p-8 rounded-2xl border shadow-2xl text-center animate-fade-in ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200/80'
+          }`}>
           <div className="w-16 h-16 bg-rose-500/10 border border-rose-500/20 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6">
             <FiAlertTriangle className="text-3xl" />
           </div>
@@ -1233,7 +1479,7 @@ export default function RestaurantAdmin() {
   // ═══════════════════════════════════════════════
   return (
     <div className={`min-h-screen font-sans flex flex-col md:flex-row ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
-      
+
       {/* Sidebar */}
       <aside className={`w-full md:w-64 p-6 flex flex-col justify-between border-r shrink-0 ${isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-slate-900 border-slate-800 text-slate-100'}`}>
         <div>
@@ -1265,9 +1511,8 @@ export default function RestaurantAdmin() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm transition-all text-left font-medium cursor-pointer ${
-                  activeTab === tab.id ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-                }`}
+                className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm transition-all text-left font-medium cursor-pointer ${activeTab === tab.id ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-lg shrink-0">{tab.icon}</span>
@@ -1297,7 +1542,7 @@ export default function RestaurantAdmin() {
 
       {/* Main Panel Content */}
       <main className="flex-1 p-6 md:p-10 overflow-y-auto w-full max-w-7xl mx-auto">
-        
+
         {/* ── TAB 1: DASHBOARD ──────────────────── */}
         {activeTab === 'dashboard' && (
           <div className="animate-fade-in space-y-8">
@@ -1314,11 +1559,10 @@ export default function RestaurantAdmin() {
                     e.stopPropagation();
                     setIsFilterDropdownOpen(!isFilterDropdownOpen);
                   }}
-                  className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold tracking-wide transition-all shadow-sm hover:shadow cursor-pointer ${
-                    isDark 
-                      ? 'bg-slate-900 border-slate-800 text-slate-200 hover:text-white hover:bg-slate-800/80' 
+                  className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold tracking-wide transition-all shadow-sm hover:shadow cursor-pointer ${isDark
+                      ? 'bg-slate-900 border-slate-800 text-slate-200 hover:text-white hover:bg-slate-800/80'
                       : 'bg-white border-slate-200 text-slate-700 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   <FiCalendar className="text-amber-500 text-base" />
                   <span>
@@ -1328,13 +1572,12 @@ export default function RestaurantAdmin() {
                 </button>
 
                 {isFilterDropdownOpen && (
-                  <div 
+                  <div
                     onClick={(e) => e.stopPropagation()}
-                    className={`absolute right-0 mt-2 w-48 rounded-2xl border shadow-2xl p-2 z-50 animate-fade-in divide-y ${
-                      isDark 
-                        ? 'bg-slate-900 border-slate-800 divide-slate-800/50' 
+                    className={`absolute right-0 mt-2 w-48 rounded-2xl border shadow-2xl p-2 z-50 animate-fade-in divide-y ${isDark
+                        ? 'bg-slate-900 border-slate-800 divide-slate-800/50'
                         : 'bg-white border-slate-200 divide-slate-100'
-                    }`}
+                      }`}
                   >
                     {[
                       { value: 'today', label: 'Today' },
@@ -1349,15 +1592,14 @@ export default function RestaurantAdmin() {
                             setDateFilter(opt.value);
                             setIsFilterDropdownOpen(false);
                           }}
-                          className={`w-full text-left px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
-                            isSelected
+                          className={`w-full text-left px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${isSelected
                               ? isDark
                                 ? 'bg-amber-500/10 text-amber-400'
                                 : 'bg-amber-50 text-amber-600'
                               : isDark
                                 ? 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
                                 : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                          }`}
+                            }`}
                         >
                           <span>{opt.label}</span>
                           {isSelected && <FiCheck className="text-sm stroke-[3px]" />}
@@ -1371,31 +1613,31 @@ export default function RestaurantAdmin() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
-                { 
-                  label: 'Gross Sales', 
-                  value: `₹${totalSales.toFixed(2)}`, 
-                  sub: dateFilter === 'today' 
-                    ? '✓ Today\'s checkouts inclusive' 
-                    : dateFilter === 'month' 
-                      ? '✓ This month\'s checkouts' 
-                      : '✓ This year\'s checkouts', 
-                  icon: '₹', 
-                  color: 'text-amber-500', 
-                  bg: 'bg-amber-500/10', 
-                  subColor: isDark ? 'text-emerald-400' : 'text-emerald-600' 
+                {
+                  label: 'Gross Sales',
+                  value: `₹${totalSales.toFixed(2)}`,
+                  sub: dateFilter === 'today'
+                    ? '✓ Today\'s checkouts inclusive'
+                    : dateFilter === 'month'
+                      ? '✓ This month\'s checkouts'
+                      : '✓ This year\'s checkouts',
+                  icon: '₹',
+                  color: 'text-amber-500',
+                  bg: 'bg-amber-500/10',
+                  subColor: isDark ? 'text-emerald-400' : 'text-emerald-600'
                 },
-                { 
-                  label: 'Total Orders', 
-                  value: ordersCount, 
-                  sub: dateFilter === 'today' 
-                    ? 'Placed today via scanned QRs' 
-                    : dateFilter === 'month' 
-                      ? 'Placed this month via scanned QRs' 
-                      : 'Placed this year via scanned QRs', 
-                  icon: <FiShoppingBag />, 
-                  color: 'text-sky-500', 
-                  bg: 'bg-sky-500/10', 
-                  subColor: isDark ? 'text-slate-500' : 'text-slate-500' 
+                {
+                  label: 'Total Orders',
+                  value: ordersCount,
+                  sub: dateFilter === 'today'
+                    ? 'Placed today via scanned QRs'
+                    : dateFilter === 'month'
+                      ? 'Placed this month via scanned QRs'
+                      : 'Placed this year via scanned QRs',
+                  icon: <FiShoppingBag />,
+                  color: 'text-sky-500',
+                  bg: 'bg-sky-500/10',
+                  subColor: isDark ? 'text-slate-500' : 'text-slate-500'
                 },
                 { label: 'Active Tables', value: tables.length, sub: 'Active mapped locations', icon: <FiGrid />, color: 'text-purple-500', bg: 'bg-purple-500/10', subColor: isDark ? 'text-slate-500' : 'text-slate-500' },
                 { label: 'Pending Orders', value: pendingOrdersCount, sub: 'Awaiting acceptance from staff', icon: <FiCoffee />, color: 'text-rose-500', bg: 'bg-rose-500/10', subColor: isDark ? 'text-slate-500' : 'text-slate-500' },
@@ -1514,13 +1756,12 @@ export default function RestaurantAdmin() {
                 <p className={`text-sm mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Publish, unpublish, and update descriptions, badges, and prices for your menu.</p>
               </div>
               <div className="flex gap-2">
-                <button 
-                  onClick={() => setShowImportMenu(true)} 
-                  className={`px-4 py-2 border font-bold rounded-xl text-sm transition-all shadow flex items-center gap-1.5 cursor-pointer ${
-                    isDark 
-                      ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200' 
+                <button
+                  onClick={() => setShowImportMenu(true)}
+                  className={`px-4 py-2 border font-bold rounded-xl text-sm transition-all shadow flex items-center gap-1.5 cursor-pointer ${isDark
+                      ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200'
                       : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
-                  }`}
+                    }`}
                 >
                   <FiUpload /> Import Menu
                 </button>
@@ -1570,12 +1811,12 @@ export default function RestaurantAdmin() {
                     </select>
                   </div>
                   <div>
-                    <ImageUploader 
-                      value={newProd.imageUrl} 
-                      onChange={(val) => setNewProd({ ...newProd, imageUrl: val })} 
-                      onUploadingStateChange={setIsUploadingProductImg} 
-                      label="Product Image" 
-                      isDark={isDark} 
+                    <ImageUploader
+                      value={newProd.imageUrl}
+                      onChange={(val) => setNewProd({ ...newProd, imageUrl: val })}
+                      onUploadingStateChange={setIsUploadingProductImg}
+                      label="Product Image"
+                      isDark={isDark}
                     />
                   </div>
                 </div>
@@ -1595,14 +1836,13 @@ export default function RestaurantAdmin() {
                 </div>
                 <div className="flex gap-2 justify-end pt-4">
                   <button type="button" onClick={handleCancelProductForm} className={`px-4 py-2 rounded-lg text-xs font-semibold ${isDark ? 'bg-slate-800 text-slate-400 hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-500'}`}>Cancel</button>
-                  <button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     disabled={isUploadingProductImg}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold text-slate-950 transition-all ${
-                      isUploadingProductImg 
-                        ? 'bg-slate-400 dark:bg-slate-700 text-slate-200 cursor-not-allowed opacity-50' 
+                    className={`px-4 py-2 rounded-lg text-xs font-bold text-slate-950 transition-all ${isUploadingProductImg
+                        ? 'bg-slate-400 dark:bg-slate-700 text-slate-200 cursor-not-allowed opacity-50'
                         : 'bg-amber-500 hover:bg-amber-600'
-                    }`}
+                      }`}
                   >
                     {isUploadingProductImg ? 'Uploading image...' : (editingProdId ? 'Save Changes' : 'Publish Product')}
                   </button>
@@ -1696,7 +1936,7 @@ export default function RestaurantAdmin() {
                       </div>
                       <div className="flex flex-wrap gap-2 justify-center md:justify-start pt-2">
                         <a href={scanLink} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 hover:bg-amber-600 font-bold text-[11px] uppercase transition-colors">Test Menu Link</a>
-                        <button 
+                        <button
                           onClick={() => { setPrintTable(tbl); setIsPrintModalOpen(true); }}
                           className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 font-bold text-[11px] uppercase transition-colors flex items-center gap-1 text-slate-950 cursor-pointer"
                         >
@@ -1732,11 +1972,10 @@ export default function RestaurantAdmin() {
                     setSelectedExportMonth(getExportMonthOptions()[0]?.value || '');
                     setIsExportModalOpen(true);
                   }}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold tracking-wide transition-all shadow-sm hover:shadow cursor-pointer ${
-                    isDark 
-                      ? 'bg-slate-900 border-slate-800 text-amber-400 hover:text-amber-300 hover:bg-slate-800/80' 
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold tracking-wide transition-all shadow-sm hover:shadow cursor-pointer ${isDark
+                      ? 'bg-slate-900 border-slate-800 text-amber-400 hover:text-amber-300 hover:bg-slate-800/80'
                       : 'bg-amber-50 border-amber-200 text-amber-700 hover:text-amber-800 hover:bg-amber-100/50'
-                  }`}
+                    }`}
                   title="Export old monthly orders and delete them permanently"
                 >
                   <FiDownload className="text-base shrink-0" />
@@ -1750,11 +1989,10 @@ export default function RestaurantAdmin() {
                       e.stopPropagation();
                       setIsOrdersFilterDropdownOpen(!isOrdersFilterDropdownOpen);
                     }}
-                    className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold tracking-wide transition-all shadow-sm hover:shadow cursor-pointer ${
-                      isDark 
-                        ? 'bg-slate-900 border-slate-800 text-slate-200 hover:text-white hover:bg-slate-800/80' 
+                    className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-semibold tracking-wide transition-all shadow-sm hover:shadow cursor-pointer ${isDark
+                        ? 'bg-slate-900 border-slate-800 text-slate-200 hover:text-white hover:bg-slate-800/80'
                         : 'bg-white border-slate-200 text-slate-700 hover:text-slate-900 hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     <FiCalendar className="text-amber-500 text-base" />
                     <span>
@@ -1764,13 +2002,12 @@ export default function RestaurantAdmin() {
                   </button>
 
                   {isOrdersFilterDropdownOpen && (
-                    <div 
+                    <div
                       onClick={(e) => e.stopPropagation()}
-                      className={`absolute right-0 mt-2 w-48 rounded-2xl border shadow-2xl p-2 z-50 animate-fade-in divide-y ${
-                        isDark 
-                          ? 'bg-slate-900 border-slate-800 divide-slate-800/50' 
+                      className={`absolute right-0 mt-2 w-48 rounded-2xl border shadow-2xl p-2 z-50 animate-fade-in divide-y ${isDark
+                          ? 'bg-slate-900 border-slate-800 divide-slate-800/50'
                           : 'bg-white border-slate-200 divide-slate-100'
-                      }`}
+                        }`}
                     >
                       {[
                         { value: 'today', label: 'Today' },
@@ -1785,15 +2022,14 @@ export default function RestaurantAdmin() {
                               setOrdersDateFilter(opt.value);
                               setIsOrdersFilterDropdownOpen(false);
                             }}
-                            className={`w-full text-left px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
-                              isSelected
+                            className={`w-full text-left px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${isSelected
                                 ? isDark
                                   ? 'bg-amber-500/10 text-amber-400'
                                   : 'bg-amber-50 text-amber-600'
                                 : isDark
                                   ? 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
                                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                            }`}
+                              }`}
                           >
                             <span>{opt.label}</span>
                             {isSelected && <FiCheck className="text-sm stroke-[3px]" />}
@@ -1856,9 +2092,8 @@ export default function RestaurantAdmin() {
                                       <span className={`font-medium break-words ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
                                         {it.name}
                                       </span>
-                                      <span className={`font-bold shrink-0 text-[11px] px-1.5 py-0.5 rounded ${
-                                        isDark ? 'bg-slate-800 text-amber-400 border border-slate-700' : 'bg-amber-50 text-amber-800 border border-amber-200/60'
-                                      }`}>
+                                      <span className={`font-bold shrink-0 text-[11px] px-1.5 py-0.5 rounded ${isDark ? 'bg-slate-800 text-amber-400 border border-slate-700' : 'bg-amber-50 text-amber-800 border border-amber-200/60'
+                                        }`}>
                                         x{it.quantity}
                                       </span>
                                     </div>
@@ -1872,9 +2107,8 @@ export default function RestaurantAdmin() {
                                 <button
                                   type="button"
                                   onClick={() => toggleExpandOrder(order.id)}
-                                  className={`mt-1.5 text-xs font-semibold hover:underline flex items-center gap-1 cursor-pointer ${
-                                    isDark ? 'text-amber-400 hover:text-amber-300' : 'text-amber-600 hover:text-amber-700'
-                                  }`}
+                                  className={`mt-1.5 text-xs font-semibold hover:underline flex items-center gap-1 cursor-pointer ${isDark ? 'text-amber-400 hover:text-amber-300' : 'text-amber-600 hover:text-amber-700'
+                                    }`}
                                 >
                                   {isExpanded ? (
                                     <>Show less ↑</>
@@ -1895,15 +2129,14 @@ export default function RestaurantAdmin() {
                             ₹{(order.grandTotal || order.totalAmount || 0).toFixed(2)}
                           </td>
                           <td className="px-6 py-4 align-top">
-                            <span className={`inline-flex items-center gap-0.5 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                              order.status === 'pending' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
-                              order.status === 'accepted' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                              order.status === 'preparing' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' :
-                              order.status === 'ready' ? 'bg-pink-100 text-pink-700 border border-pink-200' :
-                              order.status === 'served' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
-                              order.status === 'completed' ? 'bg-teal-100 text-teal-700 border border-teal-200' :
-                              'bg-slate-100 text-slate-500 border'
-                            }`}>
+                            <span className={`inline-flex items-center gap-0.5 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${order.status === 'pending' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                                order.status === 'accepted' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                                  order.status === 'preparing' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' :
+                                    order.status === 'ready' ? 'bg-pink-100 text-pink-700 border border-pink-200' :
+                                      order.status === 'served' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
+                                        order.status === 'completed' ? 'bg-teal-100 text-teal-700 border border-teal-200' :
+                                          'bg-slate-100 text-slate-500 border'
+                              }`}>
                               {order.status}
                             </span>
                           </td>
@@ -1919,13 +2152,26 @@ export default function RestaurantAdmin() {
                             </select>
                           </td>
                           <td className="px-6 py-4 align-top text-right">
-                            <button
-                              onClick={() => setOrderToDelete(order)}
-                              className="p-2 rounded-xl bg-rose-500/10 text-rose-500 hover:text-white hover:bg-rose-500 transition-all cursor-pointer inline-flex items-center justify-center border border-rose-500/20"
-                              title="Delete Order Permanently"
-                            >
-                              <FiTrash2 className="text-sm" />
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => setViewBillOrder(order)}
+                                className={`px-2.5 py-1.5 rounded-xl font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap border ${isDark
+                                    ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500 hover:text-white border-amber-500/30'
+                                    : 'bg-amber-50 text-amber-700 hover:bg-amber-500 hover:text-white border-amber-200'
+                                  }`}
+                                title="View Bill & Invoice Preview"
+                              >
+                                <FiFileText className="text-sm shrink-0" />
+                                <span>View Bill</span>
+                              </button>
+                              <button
+                                onClick={() => setOrderToDelete(order)}
+                                className="p-1.5 rounded-xl bg-rose-500/10 text-rose-500 hover:text-white hover:bg-rose-500 transition-all cursor-pointer inline-flex items-center justify-center border border-rose-500/20 shrink-0"
+                                title="Delete Order Permanently"
+                              >
+                                <FiTrash2 className="text-sm" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -2014,7 +2260,7 @@ export default function RestaurantAdmin() {
                 <h1 className={`text-3xl font-bold font-display tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>KDS Management</h1>
                 <p className={`text-sm mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Manage secure access credentials for individual Kitchen Display Screens.</p>
               </div>
-              <button 
+              <button
                 onClick={() => {
                   if (kitchenAccessList.length >= getKdsLimitNum(currentRest.kdsLimit)) {
                     alert(`You have reached your KDS Limit of ${currentRest.kdsLimit || '2'} screens. Please contact support to upgrade your limit.`);
@@ -2022,7 +2268,7 @@ export default function RestaurantAdmin() {
                   }
                   setShowAddKitchen(!showAddKitchen);
                   setEditingKitchenId(null);
-                }} 
+                }}
                 className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-md flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
               >
                 <FiPlus /> New Kitchen Screen
@@ -2038,10 +2284,10 @@ export default function RestaurantAdmin() {
                 </span>
               </div>
               <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
-                <div 
+                <div
                   className="h-full bg-emerald-500 transition-all duration-500"
-                  style={{ 
-                    width: `${Math.min(100, (kitchenAccessList.length / (getKdsLimitNum(currentRest.kdsLimit) === Infinity ? 10 : getKdsLimitNum(currentRest.kdsLimit))) * 100)}%` 
+                  style={{
+                    width: `${Math.min(100, (kitchenAccessList.length / (getKdsLimitNum(currentRest.kdsLimit) === Infinity ? 10 : getKdsLimitNum(currentRest.kdsLimit))) * 100)}%`
                   }}
                 />
               </div>
@@ -2056,13 +2302,13 @@ export default function RestaurantAdmin() {
                 <h3 className={`font-bold text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>Add Kitchen Display Screen</h3>
                 <div>
                   <label className={labelCls}>Kitchen Screen Name</label>
-                  <input 
-                    type="text" 
-                    required 
-                    placeholder="e.g. Main Kitchen, Bar, Bakery" 
-                    value={newKitchenName} 
-                    onChange={(e) => setNewKitchenName(e.target.value)} 
-                    className={inputCls} 
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Main Kitchen, Bar, Bakery"
+                    value={newKitchenName}
+                    onChange={(e) => setNewKitchenName(e.target.value)}
+                    className={inputCls}
                   />
                 </div>
                 <div className="flex gap-2 justify-end pt-2">
@@ -2078,13 +2324,13 @@ export default function RestaurantAdmin() {
                 <h3 className={`font-bold text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>Rename Kitchen Screen</h3>
                 <div>
                   <label className={labelCls}>Kitchen Screen Name</label>
-                  <input 
-                    type="text" 
-                    required 
-                    placeholder="e.g. Desserts" 
-                    value={editingKitchenName} 
-                    onChange={(e) => setEditingKitchenName(e.target.value)} 
-                    className={inputCls} 
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Desserts"
+                    value={editingKitchenName}
+                    onChange={(e) => setEditingKitchenName(e.target.value)}
+                    className={inputCls}
                   />
                 </div>
                 <div className="flex gap-2 justify-end pt-2">
@@ -2101,11 +2347,10 @@ export default function RestaurantAdmin() {
                   <div>
                     <div className="flex justify-between items-start mb-2">
                       <h3 className={`font-bold text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{item.kitchenName}</h3>
-                      <span className={`inline-flex items-center text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase tracking-wider ${
-                        item.status === 'active' 
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                      <span className={`inline-flex items-center text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase tracking-wider ${item.status === 'active'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                           : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                      }`}>
+                        }`}>
                         {item.status}
                       </span>
                     </div>
@@ -2116,12 +2361,12 @@ export default function RestaurantAdmin() {
                         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Access Key</span>
                         <div className={`flex items-center justify-between p-2 rounded-lg font-mono text-xs ${isDark ? 'bg-slate-950 border-slate-800 text-amber-400' : 'bg-slate-50 border-slate-200 text-slate-800'} border`}>
                           <span>{item.accessKey}</span>
-                          <button 
+                          <button
                             type="button"
                             onClick={() => {
                               navigator.clipboard.writeText(item.accessKey);
                               showToast("Access Key copied to clipboard!");
-                            }} 
+                            }}
                             className="text-[10px] font-bold text-amber-500 hover:underline px-1.5"
                           >
                             Copy
@@ -2134,12 +2379,12 @@ export default function RestaurantAdmin() {
                         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Kitchen PIN</span>
                         <div className={`flex items-center justify-between p-2 rounded-lg font-mono text-xs ${isDark ? 'bg-slate-950 border-slate-800 text-amber-400' : 'bg-slate-50 border-slate-200 text-slate-800'} border`}>
                           <span>{item.pin}</span>
-                          <button 
+                          <button
                             type="button"
                             onClick={() => {
                               navigator.clipboard.writeText(item.pin);
                               showToast("PIN copied to clipboard!");
-                            }} 
+                            }}
                             className="text-[10px] font-bold text-amber-500 hover:underline px-1.5"
                           >
                             Copy
@@ -2155,43 +2400,40 @@ export default function RestaurantAdmin() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 pt-4 border-t border-slate-800/20">
-                    <button 
+                    <button
                       onClick={() => {
                         setEditingKitchenId(item.id);
                         setEditingKitchenName(item.kitchenName);
                         setShowAddKitchen(false);
-                      }} 
-                      className={`px-2.5 py-1.5 text-xs rounded-lg font-medium flex-1 text-center border ${
-                        isDark 
-                          ? 'border-slate-800 text-slate-300 hover:bg-slate-800' 
+                      }}
+                      className={`px-2.5 py-1.5 text-xs rounded-lg font-medium flex-1 text-center border ${isDark
+                          ? 'border-slate-800 text-slate-300 hover:bg-slate-800'
                           : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                      }`}
+                        }`}
                     >
                       Rename
                     </button>
-                    <button 
-                      onClick={() => handleToggleKitchenStatus(item.id, item.status)} 
-                      className={`px-2.5 py-1.5 text-xs rounded-lg font-medium flex-1 text-center border ${
-                        item.status === 'active'
+                    <button
+                      onClick={() => handleToggleKitchenStatus(item.id, item.status)}
+                      className={`px-2.5 py-1.5 text-xs rounded-lg font-medium flex-1 text-center border ${item.status === 'active'
                           ? 'border-amber-500/20 text-amber-400 bg-amber-500/5 hover:bg-amber-500/10'
                           : 'border-emerald-500/20 text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10'
-                      }`}
+                        }`}
                     >
                       {item.status === 'active' ? 'Disable' : 'Enable'}
                     </button>
-                    <button 
-                      onClick={() => handleRegenerateKeys(item.id, item.kitchenName)} 
+                    <button
+                      onClick={() => handleRegenerateKeys(item.id, item.kitchenName)}
                       title="Regenerate access codes"
-                      className={`p-1.5 text-xs rounded-lg font-medium border ${
-                        isDark 
-                          ? 'border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800' 
+                      className={`p-1.5 text-xs rounded-lg font-medium border ${isDark
+                          ? 'border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
                           : 'border-slate-200 text-slate-500 hover:bg-slate-100'
-                      }`}
+                        }`}
                     >
                       Regen
                     </button>
-                    <button 
-                      onClick={() => handleDeleteKitchenAccess(item.id, item.kitchenName)} 
+                    <button
+                      onClick={() => handleDeleteKitchenAccess(item.id, item.kitchenName)}
                       className="p-1.5 text-xs rounded-lg text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20"
                     >
                       <FiTrash2 />
@@ -2210,24 +2452,24 @@ export default function RestaurantAdmin() {
 
         {/* ── TAB FLOORMAP: FLOOR MAP ─────────── */}
         {activeTab === 'floormap' && currentRest && (
-          <FloorMapManager 
-            restaurantId={currentRest.id} 
-            physicalTables={tables} 
-            orders={orders} 
+          <FloorMapManager
+            restaurantId={currentRest.id}
+            physicalTables={tables}
+            orders={orders}
             currentRest={currentRest}
           />
         )}
 
         {/* ── TAB BILLING: BILLING SYSTEM ──────── */}
         {activeTab === 'billing' && currentRest && (
-          <BillingSystem 
-            restaurantId={currentRest.id} 
-            products={products} 
+          <BillingSystem
+            restaurantId={currentRest.id}
+            products={products}
             categories={categories}
-            tables={tables} 
-            orders={orders} 
-            currentRest={currentRest} 
-            isDark={isDark} 
+            tables={tables}
+            orders={orders}
+            currentRest={currentRest}
+            isDark={isDark}
             onShowStatus={showToast}
           />
         )}
@@ -2257,12 +2499,12 @@ export default function RestaurantAdmin() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
-                  <ImageUploader 
-                    value={currentRest.logoUrl || ''} 
-                    onChange={(val) => setCurrentRest({ ...currentRest, logoUrl: val })} 
-                    onUploadingStateChange={setIsUploadingLogoImg} 
-                    label="Store Logo Image" 
-                    isDark={isDark} 
+                  <ImageUploader
+                    value={currentRest.logoUrl || ''}
+                    onChange={(val) => setCurrentRest({ ...currentRest, logoUrl: val })}
+                    onUploadingStateChange={setIsUploadingLogoImg}
+                    label="Store Logo Image"
+                    isDark={isDark}
                   />
                 </div>
                 <div>
@@ -2287,7 +2529,7 @@ export default function RestaurantAdmin() {
               {/* Billing Settings Section */}
               <div className={`pt-6 border-t ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
                 <h3 className={`text-base font-bold tracking-tight mb-4 ${isDark ? 'text-white' : 'text-slate-900'}`}>Billing Settings</h3>
-                
+
                 {/* Receipt Branding Subsection */}
                 <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50 border-slate-150'}`}>
                   <h4 className={`text-xs font-bold tracking-wider uppercase mb-3 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Receipt Branding</h4>
@@ -2296,7 +2538,7 @@ export default function RestaurantAdmin() {
                       <p className={`text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Show: "Powered by EasyDine"</p>
                       <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'} mt-0.5`}>Display a minimal, elegant footer branding at the bottom of printed receipts and exported PDFs.</p>
                     </div>
-                    
+
                     <div className="flex items-center gap-3">
                       <span className={`text-xs font-black tracking-wider ${currentRest.showPoweredBy ? 'text-amber-500' : isDark ? 'text-slate-500' : 'text-slate-400'}`}>
                         {currentRest.showPoweredBy ? 'ON' : 'OFF'}
@@ -2310,14 +2552,12 @@ export default function RestaurantAdmin() {
                             includePoweredByInPrint: !currentRest.showPoweredBy
                           });
                         }}
-                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          currentRest.showPoweredBy ? 'bg-amber-500' : isDark ? 'bg-slate-700' : 'bg-slate-200'
-                        }`}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${currentRest.showPoweredBy ? 'bg-amber-500' : isDark ? 'bg-slate-700' : 'bg-slate-200'
+                          }`}
                       >
                         <span
-                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                            currentRest.showPoweredBy ? 'translate-x-5' : 'translate-x-0'
-                          }`}
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${currentRest.showPoweredBy ? 'translate-x-5' : 'translate-x-0'
+                            }`}
                         />
                       </button>
                     </div>
@@ -2347,13 +2587,12 @@ export default function RestaurantAdmin() {
                           key={layout.id}
                           type="button"
                           onClick={() => setCurrentRest({ ...currentRest, printLayout: layout.id })}
-                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                            selected
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${selected
                               ? 'border-amber-500 bg-amber-500/10 text-amber-500 shadow-sm'
                               : isDark
                                 ? 'border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-700'
                                 : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold">{layout.name}</span>
@@ -2414,14 +2653,12 @@ export default function RestaurantAdmin() {
                         <button
                           type="button"
                           onClick={opt.toggle}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                            opt.val ? 'bg-amber-500' : isDark ? 'bg-slate-700' : 'bg-slate-200'
-                          }`}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${opt.val ? 'bg-amber-500' : isDark ? 'bg-slate-700' : 'bg-slate-200'
+                            }`}
                         >
                           <span
-                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                              opt.val ? 'translate-x-5' : 'translate-x-0'
-                            }`}
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${opt.val ? 'translate-x-5' : 'translate-x-0'
+                              }`}
                           />
                         </button>
                       </div>
@@ -2431,14 +2668,13 @@ export default function RestaurantAdmin() {
               </div>
 
               <div className={`pt-4 border-t flex items-center justify-between ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={isUploadingLogoImg}
-                  className={`px-6 py-2.5 font-bold rounded-xl text-sm transition-all shadow cursor-pointer ${
-                    isUploadingLogoImg 
-                      ? 'bg-slate-400 dark:bg-slate-700 text-slate-200 cursor-not-allowed opacity-50' 
+                  className={`px-6 py-2.5 font-bold rounded-xl text-sm transition-all shadow cursor-pointer ${isUploadingLogoImg
+                      ? 'bg-slate-400 dark:bg-slate-700 text-slate-200 cursor-not-allowed opacity-50'
                       : 'bg-amber-500 hover:bg-amber-600 text-slate-950'
-                  }`}
+                    }`}
                 >
                   {isUploadingLogoImg ? 'Uploading logo...' : 'Save Store Settings'}
                 </button>
@@ -2472,9 +2708,8 @@ export default function RestaurantAdmin() {
 
       {/* Real-time Order Notification Toast */}
       {currentNotification && (
-        <div className={`fixed top-4 right-4 z-50 w-full max-w-sm p-4 bg-[#16a34a] text-white rounded-2xl shadow-xl border border-emerald-500/30 flex items-start gap-3 select-none ${
-          isFadingOut ? 'animate-fade-out-right' : 'animate-slide-in-right'
-        }`}>
+        <div className={`fixed top-4 right-4 z-50 w-full max-w-sm p-4 bg-[#16a34a] text-white rounded-2xl shadow-xl border border-emerald-500/30 flex items-start gap-3 select-none ${isFadingOut ? 'animate-fade-out-right' : 'animate-slide-in-right'
+          }`}>
           <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center font-bold text-lg text-white shrink-0">
             🔔
           </div>
@@ -2483,8 +2718,8 @@ export default function RestaurantAdmin() {
             <p className="text-xs font-semibold opacity-90 mt-0.5">Table No: {currentNotification.tableName}</p>
             <p className="text-[10px] font-mono opacity-80 mt-1">Order #{currentNotification.orderId}</p>
           </div>
-          <button 
-            onClick={handleCloseNotification} 
+          <button
+            onClick={handleCloseNotification}
             className="p-1 rounded-lg hover:bg-white/10 active:bg-white/20 text-white transition-colors cursor-pointer"
           >
             <FiX className="text-base" />
@@ -2501,8 +2736,8 @@ export default function RestaurantAdmin() {
           <div className="flex-1 text-sm font-semibold">
             {adminSuccessToast}
           </div>
-          <button 
-            onClick={() => setAdminSuccessToast('')} 
+          <button
+            onClick={() => setAdminSuccessToast('')}
             className="p-1 rounded-lg hover:bg-white/10 active:bg-white/20 text-white transition-colors cursor-pointer"
           >
             <FiX className="text-base" />
@@ -2510,13 +2745,231 @@ export default function RestaurantAdmin() {
         </div>
       )}
 
-      <QRPrintSystem 
+      <QRPrintSystem
         isOpen={isPrintModalOpen}
         onClose={() => { setIsPrintModalOpen(false); setPrintTable(null); }}
         table={printTable}
         restaurant={currentRest}
         isDark={isDark}
       />
+
+      {/* View Bill Preview Modal */}
+      {viewBillOrder && (() => {
+        const billData = getBillDataFromOrder(viewBillOrder);
+        if (!billData) return null;
+
+        return (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto animate-fade-in">
+            <div className={`w-full max-w-2xl my-8 rounded-3xl border shadow-2xl overflow-hidden flex flex-col ${isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
+
+              {/* Modal Header */}
+              <div className={`px-6 py-4 border-b flex justify-between items-center ${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50'}`}>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                    <FiFileText className="text-lg" />
+                  </div>
+                  <div>
+                    <h2 className={`font-bold font-display text-base sm:text-lg tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                      Bill & Invoice Preview
+                    </h2>
+                    <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Order #{billData.orderId}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setViewBillOrder(null)}
+                  className={`p-2 rounded-xl transition-colors cursor-pointer ${isDark ? 'hover:bg-slate-800 text-slate-400 hover:text-white' : 'hover:bg-slate-200 text-slate-500'}`}
+                  title="Close preview"
+                >
+                  <FiX className="text-lg" />
+                </button>
+              </div>
+
+              {/* Modal Body - Printable Invoice Card */}
+              <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6">
+                <div className={`p-6 rounded-2xl border shadow-sm space-y-5 ${isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-amber-50/20 border-amber-200/50'}`}>
+
+                  {/* Restaurant Brand Header */}
+                  <div className="text-center pb-4 border-b border-dashed border-slate-300 dark:border-slate-800 space-y-1">
+                    {currentRest?.logoUrl && (
+                      <img
+                        src={currentRest.logoUrl}
+                        alt="Logo"
+                        className="h-12 max-w-[160px] object-contain mx-auto mb-2 rounded-lg"
+                      />
+                    )}
+                    <h3 className={`text-xl font-bold font-display tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                      {currentRest?.name || currentRest?.restaurantName || 'EASYDINE RESTAURANT'}
+                    </h3>
+                    {currentRest?.address && (
+                      <p className="text-xs text-slate-500 max-w-md mx-auto">{currentRest.address}</p>
+                    )}
+                    <div className="text-[11px] text-slate-400 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 pt-0.5">
+                      {(currentRest?.contact || currentRest?.phone) && (
+                        <span>Phone: {currentRest.contact || currentRest.phone}</span>
+                      )}
+                      {currentRest?.gstin && <span>GSTIN: {currentRest.gstin}</span>}
+                      {currentRest?.fssaiNo && <span>FSSAI: {currentRest.fssaiNo}</span>}
+                    </div>
+                  </div>
+
+                  {/* Invoice Key Metadata Grid */}
+                  <div className={`p-3.5 rounded-xl border grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs ${isDark ? 'bg-slate-900/90 border-slate-800 text-slate-300' : 'bg-white border-slate-200/80 text-slate-700'}`}>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Bill Number</span>
+                      <span className="font-mono font-bold text-amber-500">{billData.billNumber}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Order ID</span>
+                      <span className="font-mono font-semibold">{billData.orderId}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Date & Time</span>
+                      <span className="font-medium">{billData.date} {billData.time}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Order Type</span>
+                      <span className="font-semibold uppercase tracking-wider text-[11px] text-amber-600 dark:text-amber-400">{billData.orderType}</span>
+                    </div>
+                    {billData.tableName && (
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Table</span>
+                        <span className="font-bold text-emerald-600 dark:text-emerald-400">{billData.tableName}</span>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Payment Status</span>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase mt-0.5 ${String(billData.paymentStatus).toLowerCase() === 'paid'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400'
+                        }`}>
+                        {billData.paymentStatus}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Items List (All items rendered in full vertical view) */}
+                  <div className="space-y-2">
+                    <div className="text-xs font-bold uppercase tracking-wider text-slate-400 pb-1 border-b border-slate-200 dark:border-slate-800 flex justify-between">
+                      <span>Ordered Items ({billData.items.length})</span>
+                      <span>Amount</span>
+                    </div>
+
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                      {billData.items.map((it, idx) => (
+                        <div key={idx} className="py-2.5 flex items-start justify-between gap-3 text-xs">
+                          <div className="space-y-0.5 flex-1 min-w-0 pr-2">
+                            <div className={`font-semibold break-words leading-snug ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                              {it.name}
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono">
+                              ₹{it.price.toFixed(2)} × {it.quantity}
+                            </div>
+                          </div>
+                          <div className="font-mono font-bold text-slate-900 dark:text-white shrink-0 text-right">
+                            ₹{it.subtotal.toFixed(2)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Financial Breakdown */}
+                  <div className={`pt-4 border-t border-dashed space-y-2 text-xs ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
+                    <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                      <span>Subtotal</span>
+                      <span className="font-mono font-semibold text-slate-900 dark:text-white">₹{billData.subtotal.toFixed(2)}</span>
+                    </div>
+
+                    {billData.discount > 0 && (
+                      <div className="flex justify-between font-medium text-emerald-600 dark:text-emerald-400">
+                        <span>Coupon Discount {billData.couponCode ? `(${billData.couponCode})` : ''}</span>
+                        <span className="font-mono font-bold">-₹{billData.discount.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {billData.taxAmount > 0 && (
+                      <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                        <span>GST ({billData.taxRate}%)</span>
+                        <span className="font-mono font-semibold text-slate-900 dark:text-white">₹{billData.taxAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {billData.serviceChargeAmount > 0 && (
+                      <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                        <span>Service Charge ({billData.serviceChargeRate}%)</span>
+                        <span className="font-mono font-semibold text-slate-900 dark:text-white">₹{billData.serviceChargeAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-300 dark:border-slate-800 flex justify-between items-center text-sm font-bold">
+                      <span className={isDark ? 'text-white' : 'text-slate-900'}>Grand Total</span>
+                      <span className="font-mono text-lg text-amber-500">₹{billData.grandTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  {billData.notes && (
+                    <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-900/40 text-xs text-rose-600 dark:text-rose-400">
+                      <span className="font-bold">Special Instruction:</span> {billData.notes}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Modal Footer Controls */}
+              <div className={`p-6 border-t flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 ${isDark ? 'border-slate-800 bg-slate-950/40' : 'border-slate-100 bg-slate-50'}`}>
+
+                {/* Print Layout Selection */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-400 shrink-0">Layout:</span>
+                  <select
+                    value={billModalPrintLayout}
+                    onChange={(e) => setBillModalPrintLayout(e.target.value)}
+                    className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:outline-none focus:border-amber-500 ${isDark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-700'
+                      }`}
+                  >
+                    <option value="80mm">80mm Thermal Receipt</option>
+                    <option value="58mm">58mm Thermal Receipt</option>
+                    <option value="a4">A4 Tax Invoice</option>
+                  </select>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-wrap items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintBillFromModal(billData)}
+                    className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer transition-all"
+                  >
+                    <FiPrinter className="text-sm" /> Print Receipt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadPDFFromModal(billData)}
+                    className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer border ${isDark
+                        ? 'bg-slate-800 hover:bg-slate-700 text-white border-slate-700'
+                        : 'bg-slate-900 hover:bg-slate-800 text-white border-slate-800'
+                      }`}
+                  >
+                    <FiDownload className="text-sm" /> Download PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewBillOrder(null)}
+                    className={`px-4 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${isDark
+                        ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'
+                      }`}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Delete Order Confirmation Modal */}
       {orderToDelete && (
@@ -2530,7 +2983,7 @@ export default function RestaurantAdmin() {
                   Delete Order
                 </h3>
               </div>
-              <button 
+              <button
                 onClick={() => setOrderToDelete(null)}
                 className={`p-2 rounded-xl transition-all cursor-pointer hover:text-rose-500 ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
               >
@@ -2554,11 +3007,10 @@ export default function RestaurantAdmin() {
             <div className={`px-6 py-4 border-t flex justify-end gap-3 ${isDark ? 'border-slate-800 bg-slate-950/20' : 'border-slate-100 bg-slate-50/50'}`}>
               <button
                 onClick={() => setOrderToDelete(null)}
-                className={`px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-                  isDark 
-                    ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white' 
+                className={`px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer ${isDark
+                    ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
                     : 'bg-slate-200 hover:bg-slate-300 text-slate-700 hover:text-slate-900'
-                }`}
+                  }`}
               >
                 Cancel
               </button>
@@ -2577,7 +3029,7 @@ export default function RestaurantAdmin() {
       {isExportModalOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
           <div className={`w-full max-w-lg rounded-3xl border shadow-2xl overflow-hidden ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-            
+
             {/* Header */}
             <div className={`p-6 border-b flex justify-between items-center ${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50'}`}>
               <div className="flex items-center gap-2 text-amber-500">
@@ -2586,7 +3038,7 @@ export default function RestaurantAdmin() {
                   {exportStep === 1 ? 'Export Monthly Orders' : 'Export Completed'}
                 </h3>
               </div>
-              <button 
+              <button
                 onClick={() => {
                   setIsExportModalOpen(false);
                   setExportStep(1);
@@ -2608,11 +3060,10 @@ export default function RestaurantAdmin() {
                   <select
                     value={selectedExportMonth}
                     onChange={(e) => setSelectedExportMonth(e.target.value)}
-                    className={`w-full p-3.5 rounded-2xl border text-sm font-semibold tracking-wide focus:outline-none focus:border-amber-500 transition-colors ${
-                      isDark 
-                        ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                    className={`w-full p-3.5 rounded-2xl border text-sm font-semibold tracking-wide focus:outline-none focus:border-amber-500 transition-colors ${isDark
+                        ? 'bg-slate-950 border-slate-800 text-slate-200'
                         : 'bg-slate-50 border-slate-200 text-slate-800'
-                    }`}
+                      }`}
                   >
                     <option value="" disabled>-- Choose Month --</option>
                     {getExportMonthOptions().map(opt => {
@@ -2642,21 +3093,19 @@ export default function RestaurantAdmin() {
                           key={fmt.key}
                           type="button"
                           onClick={() => setExportFormats(prev => ({ ...prev, [fmt.key]: !prev[fmt.key] }))}
-                          className={`p-4 rounded-2xl border flex flex-col items-center justify-center gap-2 transition-all cursor-pointer text-center group ${
-                            isSelected
+                          className={`p-4 rounded-2xl border flex flex-col items-center justify-center gap-2 transition-all cursor-pointer text-center group ${isSelected
                               ? isDark
                                 ? 'bg-amber-500/10 border-amber-500/50 text-amber-400'
                                 : 'bg-amber-50 border-amber-200 text-amber-700 font-bold'
                               : isDark
                                 ? 'bg-slate-950/40 border-slate-800 text-slate-400 hover:border-slate-700'
                                 : 'bg-slate-50/50 border-slate-100 text-slate-500 hover:border-slate-200'
-                          }`}
+                            }`}
                         >
-                          <span className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition-colors ${
-                            isSelected
+                          <span className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition-colors ${isSelected
                               ? 'bg-amber-500 text-slate-950'
                               : isDark ? 'bg-slate-800 text-slate-500' : 'bg-slate-200 text-slate-500'
-                          }`}>
+                            }`}>
                             {isSelected ? '✓' : ''}
                           </span>
                           <span className="text-xs font-bold tracking-tight">{fmt.label}</span>
@@ -2668,9 +3117,8 @@ export default function RestaurantAdmin() {
                 </div>
 
                 {selectedExportMonth && (
-                  <div className={`p-4 rounded-2xl border flex items-center gap-3 text-xs ${
-                    isDark ? 'bg-slate-950/50 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
-                  }`}>
+                  <div className={`p-4 rounded-2xl border flex items-center gap-3 text-xs ${isDark ? 'bg-slate-950/50 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
+                    }`}>
                     <FiAlertTriangle className="text-amber-500 text-lg shrink-0" />
                     <span>
                       Found <strong>{getOrdersForMonth(selectedExportMonth).length}</strong> orders for the selected month.
@@ -2683,11 +3131,10 @@ export default function RestaurantAdmin() {
                   <button
                     type="button"
                     onClick={() => setIsExportModalOpen(false)}
-                    className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-                      isDark 
-                        ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white' 
+                    className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${isDark
+                        ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
                         : 'bg-slate-200 hover:bg-slate-300 text-slate-700 hover:text-slate-900'
-                    }`}
+                      }`}
                   >
                     Cancel
                   </button>
@@ -2720,9 +3167,8 @@ export default function RestaurantAdmin() {
                   </div>
                 </div>
 
-                <div className={`p-5 rounded-2xl border border-dashed space-y-3 ${
-                  isDark ? 'bg-rose-950/10 border-rose-500/20' : 'bg-rose-50/30 border-rose-500/10'
-                }`}>
+                <div className={`p-5 rounded-2xl border border-dashed space-y-3 ${isDark ? 'bg-rose-950/10 border-rose-500/20' : 'bg-rose-50/30 border-rose-500/10'
+                  }`}>
                   <div className="flex items-start gap-2.5 text-rose-500">
                     <FiAlertTriangle className="text-lg shrink-0 mt-0.5" />
                     <div>
@@ -2732,9 +3178,8 @@ export default function RestaurantAdmin() {
                       </p>
                     </div>
                   </div>
-                  <div className={`p-3.5 rounded-xl border text-xs font-mono flex flex-col gap-1 ${
-                    isDark ? 'bg-slate-950/40 border-slate-800/80 text-slate-400' : 'bg-slate-50 border-slate-200/60 text-slate-600'
-                  }`}>
+                  <div className={`p-3.5 rounded-xl border text-xs font-mono flex flex-col gap-1 ${isDark ? 'bg-slate-950/40 border-slate-800/80 text-slate-400' : 'bg-slate-50 border-slate-200/60 text-slate-600'
+                    }`}>
                     <div><span className="font-bold text-amber-500">Selected Month:</span> {getExportMonthOptions().find(m => m.value === selectedExportMonth)?.label || selectedExportMonth}</div>
                     <div><span className="font-bold text-amber-500">Total Cleared:</span> {getOrdersForMonth(selectedExportMonth).length} Orders</div>
                     <div className="text-[10px] text-rose-500 font-bold mt-1 uppercase">★ Action cannot be undone</div>
@@ -2750,11 +3195,10 @@ export default function RestaurantAdmin() {
                       setExportStep(1);
                       setSelectedExportMonth('');
                     }}
-                    className={`flex-1 px-5 py-3 rounded-xl text-sm font-bold transition-all cursor-pointer text-center ${
-                      isDark 
-                        ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white' 
+                    className={`flex-1 px-5 py-3 rounded-xl text-sm font-bold transition-all cursor-pointer text-center ${isDark
+                        ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
                         : 'bg-slate-200 hover:bg-slate-300 text-slate-700 hover:text-slate-900'
-                    }`}
+                      }`}
                   >
                     Keep Orders
                   </button>
@@ -2776,9 +3220,8 @@ export default function RestaurantAdmin() {
       {/* Security Recommendation Modal */}
       {currentRest?.usesTemporaryPassword && !dismissedRecommendation && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border transition-all ${
-            isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
-          }`}>
+          <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border transition-all ${isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}>
             <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mb-4">
               <FiAlertTriangle className="text-2xl animate-pulse" />
             </div>
@@ -2792,9 +3235,8 @@ export default function RestaurantAdmin() {
               <button
                 type="button"
                 onClick={() => setDismissedRecommendation(true)}
-                className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${
-                  isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                }`}
+                className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
               >
                 Later
               </button>
@@ -2816,9 +3258,8 @@ export default function RestaurantAdmin() {
       {/* Change Password Dialog */}
       {isChangePasswordOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border transition-all ${
-            isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
-          }`}>
+          <div className={`w-full max-w-md rounded-2xl p-6 shadow-2xl border transition-all ${isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}>
             <h3 className={`text-lg font-bold font-display tracking-tight mb-1 ${isDark ? 'text-white' : 'text-slate-900'}`}>
               Change Password
             </h3>
@@ -2887,9 +3328,8 @@ export default function RestaurantAdmin() {
                     setChangePasswordError('');
                     setChangePasswordSuccess(false);
                   }}
-                  className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${
-                    isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                  }`}
+                  className={`px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                    }`}
                 >
                   Cancel
                 </button>
